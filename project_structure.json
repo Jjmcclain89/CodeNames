@@ -1,0 +1,538 @@
+{
+  "name": "CodeNames",
+  "type": "directory",
+  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames",
+  "children": [
+    {
+      "name": ".dockerignore",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\.dockerignore",
+      "size": "175 bytes"
+    },
+    {
+      "name": "CHANGELOG.md",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\CHANGELOG.md",
+      "size": "4.4 KB"
+    },
+    {
+      "name": "DEVELOPMENT_PLAN.md",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\DEVELOPMENT_PLAN.md",
+      "size": "9.2 KB"
+    },
+    {
+      "name": "README.md",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\README.md",
+      "size": "6.8 KB"
+    },
+    {
+      "name": "SESSION_SUMMARIES.md",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\SESSION_SUMMARIES.md",
+      "size": "2.7 KB"
+    },
+    {
+      "name": "SESSION_WORKFLOW.md",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\SESSION_WORKFLOW.md",
+      "size": "5.3 KB"
+    },
+    {
+      "name": "backend",
+      "type": "directory",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend",
+      "children": [
+        {
+          "name": ".env",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\.env",
+          "size": "377 bytes"
+        },
+        {
+          "name": ".env.alt",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\.env.alt",
+          "size": "365 bytes"
+        },
+        {
+          "name": ".env.backup",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\.env.backup",
+          "size": "349 bytes"
+        },
+        {
+          "name": ".env.example",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\.env.example",
+          "size": "377 bytes"
+        },
+        {
+          "name": "package-lock.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\package-lock.json",
+          "size": "255.8 KB"
+        },
+        {
+          "name": "package.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\package.json",
+          "size": "1.3 KB"
+        },
+        {
+          "name": "prisma",
+          "type": "directory",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\prisma",
+          "children": [
+            {
+              "name": "init.sql",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\prisma\\init.sql",
+              "children": []
+            },
+            {
+              "name": "schema.prisma",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\prisma\\schema.prisma",
+              "size": "2.3 KB"
+            }
+          ]
+        },
+        {
+          "name": "src",
+          "type": "directory",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src",
+          "children": [
+            {
+              "name": "index.ts",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\index.ts",
+              "size": "1.3 KB"
+            },
+            {
+              "name": "middleware",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\middleware",
+              "children": []
+            },
+            {
+              "name": "models",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\models",
+              "children": []
+            },
+            {
+              "name": "routes",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\routes",
+              "children": [
+                {
+                  "name": "auth.ts",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\routes\\auth.ts",
+                  "size": "1.9 KB"
+                },
+                {
+                  "name": "rooms.ts",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\routes\\rooms.ts",
+                  "size": "1.3 KB"
+                }
+              ]
+            },
+            {
+              "name": "server.ts",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\server.ts",
+              "size": "1.9 KB"
+            },
+            {
+              "name": "services",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\services",
+              "children": []
+            },
+            {
+              "name": "socket",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\socket",
+              "children": [
+                {
+                  "name": "socketHandlers.ts",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\socket\\socketHandlers.ts",
+                  "size": "6.8 KB"
+                }
+              ]
+            },
+            {
+              "name": "types",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\types",
+              "children": []
+            },
+            {
+              "name": "utils",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\src\\utils",
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "tests",
+          "type": "directory",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\tests",
+          "children": []
+        },
+        {
+          "name": "tsconfig.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\backend\\tsconfig.json",
+          "size": "758 bytes"
+        }
+      ]
+    },
+    {
+      "name": "docker-compose.alt.yml",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\docker-compose.alt.yml",
+      "size": "654 bytes"
+    },
+    {
+      "name": "docker-compose.yml",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\docker-compose.yml",
+      "size": "686 bytes"
+    },
+    {
+      "name": "frontend",
+      "type": "directory",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend",
+      "children": [
+        {
+          "name": ".env",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\.env",
+          "size": "136 bytes"
+        },
+        {
+          "name": ".env.example",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\.env.example",
+          "size": "136 bytes"
+        },
+        {
+          "name": "index.html",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\index.html",
+          "size": "371 bytes"
+        },
+        {
+          "name": "package-lock.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\package-lock.json",
+          "size": "232.3 KB"
+        },
+        {
+          "name": "package.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\package.json",
+          "size": "1.2 KB"
+        },
+        {
+          "name": "postcss.config.js",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\postcss.config.js",
+          "size": "86 bytes"
+        },
+        {
+          "name": "public",
+          "type": "directory",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\public",
+          "children": []
+        },
+        {
+          "name": "src",
+          "type": "directory",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src",
+          "children": [
+            {
+              "name": "App.css",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\App.css",
+              "size": "613 bytes"
+            },
+            {
+              "name": "App.tsx",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\App.tsx",
+              "size": "3.4 KB"
+            },
+            {
+              "name": "components",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\components",
+              "children": [
+                {
+                  "name": "Game",
+                  "type": "directory",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\components\\Game",
+                  "children": [
+                    "..."
+                  ]
+                },
+                {
+                  "name": "Room",
+                  "type": "directory",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\components\\Room",
+                  "children": [
+                    "..."
+                  ]
+                },
+                {
+                  "name": "UI",
+                  "type": "directory",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\components\\UI",
+                  "children": [
+                    "..."
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "constants",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\constants",
+              "children": []
+            },
+            {
+              "name": "context",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\context",
+              "children": [
+                {
+                  "name": "GameContext.tsx",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\context\\GameContext.tsx",
+                  "size": "792 bytes"
+                }
+              ]
+            },
+            {
+              "name": "hooks",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\hooks",
+              "children": [
+                {
+                  "name": "useSocket.ts",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\hooks\\useSocket.ts",
+                  "size": "3.9 KB"
+                }
+              ]
+            },
+            {
+              "name": "index.css",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\index.css",
+              "size": "980 bytes"
+            },
+            {
+              "name": "main.tsx",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\main.tsx",
+              "size": "246 bytes"
+            },
+            {
+              "name": "pages",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\pages",
+              "children": [
+                {
+                  "name": "HomePage.tsx",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\pages\\HomePage.tsx",
+                  "size": "5.3 KB"
+                },
+                {
+                  "name": "LoginPage.tsx",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\pages\\LoginPage.tsx",
+                  "size": "3.3 KB"
+                },
+                {
+                  "name": "RoomPage.tsx",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\pages\\RoomPage.tsx",
+                  "size": "6.0 KB"
+                }
+              ]
+            },
+            {
+              "name": "services",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\services",
+              "children": [
+                {
+                  "name": "authService.ts",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\services\\authService.ts",
+                  "size": "1.9 KB"
+                },
+                {
+                  "name": "socketService.ts",
+                  "type": "file",
+                  "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\services\\socketService.ts",
+                  "size": "3.7 KB"
+                }
+              ]
+            },
+            {
+              "name": "types",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\types",
+              "children": []
+            },
+            {
+              "name": "utils",
+              "type": "directory",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\src\\utils",
+              "children": []
+            }
+          ]
+        },
+        {
+          "name": "tailwind.config.js",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\tailwind.config.js",
+          "size": "363 bytes"
+        },
+        {
+          "name": "tsconfig.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\tsconfig.json",
+          "size": "884 bytes"
+        },
+        {
+          "name": "tsconfig.node.json",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\tsconfig.node.json",
+          "size": "231 bytes"
+        },
+        {
+          "name": "vite.config.ts",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\frontend\\vite.config.ts",
+          "size": "460 bytes"
+        }
+      ]
+    },
+    {
+      "name": "project_structure.json",
+      "type": "file",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\project_structure.json",
+      "size": "17.3 KB"
+    },
+    {
+      "name": "python",
+      "type": "directory",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python",
+      "children": [
+        {
+          "name": "check_port_conflicts.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\check_port_conflicts.py",
+          "size": "9.3 KB"
+        },
+        {
+          "name": "complete_phase0.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\complete_phase0.py",
+          "size": "13.8 KB"
+        },
+        {
+          "name": "create_changelog_script.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\create_changelog_script.py",
+          "size": "2.8 KB"
+        },
+        {
+          "name": "directory_mapper.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\directory_mapper.py",
+          "size": "8.1 KB"
+        },
+        {
+          "name": "fix_database_connection.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\fix_database_connection.py",
+          "size": "9.5 KB"
+        },
+        {
+          "name": "fix_login_input.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\fix_login_input.py",
+          "size": "4.5 KB"
+        },
+        {
+          "name": "fix_prisma_connection.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\fix_prisma_connection.py",
+          "size": "10.4 KB"
+        },
+        {
+          "name": "fix_session_workflow.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\fix_session_workflow.py",
+          "size": "12.7 KB"
+        },
+        {
+          "name": "phase1_socket_foundation.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\phase1_socket_foundation.py",
+          "size": "43.5 KB"
+        },
+        {
+          "name": "phase1_socket_foundation_windows.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\phase1_socket_foundation_windows.py",
+          "size": "44.1 KB"
+        },
+        {
+          "name": "setup_project.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\setup_project.py",
+          "size": "26.9 KB"
+        },
+        {
+          "name": "update_session_workflow.py",
+          "type": "file",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\python\\update_session_workflow.py",
+          "size": "12.5 KB"
+        }
+      ]
+    },
+    {
+      "name": "shared",
+      "type": "directory",
+      "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\shared",
+      "children": [
+        {
+          "name": "types",
+          "type": "directory",
+          "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\shared\\types",
+          "children": [
+            {
+              "name": "index.ts",
+              "type": "file",
+              "path": "C:\\Users\\Jmccl\\Coding Projects\\CodeNames\\shared\\types\\index.ts",
+              "size": "1.5 KB"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
