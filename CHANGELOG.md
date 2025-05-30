@@ -8,8 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial project setup and documentation
-- Project architecture decisions and tech stack selection
 
 ### Changed
 
@@ -22,6 +20,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 ---
+
+## [0.1.0] - 2025-05-29
+
+### Added
+- Complete project structure setup with frontend, backend, and shared directories
+- Docker configuration for PostgreSQL and Redis development databases
+- TypeScript configurations with strict settings for both frontend and backend
+- Package.json files with all necessary dependencies for React and Node.js
+- Prisma ORM setup with PostgreSQL schema for users, game rooms, and game state
+- Vite configuration for React frontend with path aliases
+- Tailwind CSS setup with custom game colors
+- Basic Express server with Socket.io integration
+- Environment configuration templates
+- Git ignore files and Docker ignore configuration
+- Basic React components structure and routing setup
+- JWT authentication foundation
+- Rate limiting and security middleware setup
+
+### Changed
+- N/A (Initial setup)
+
+### Security
+- Added Helmet middleware for security headers
+- Implemented rate limiting for API endpoints
+- Set up CORS configuration
+- JWT token structure for authentication
+
+---
+
+## Python Scripts Run
+- `python/setup_project.py` - Initial project structure and configuration setup (2025-05-29)
+
+---
+
 
 ## Release Guidelines
 
@@ -46,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **v0.5.0** - Deployment preparation
 - **v1.0.0** - First production release
 
----
+
+
 
 ## Development Changelog
 
@@ -75,7 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added input validation with Zod schemas
 -->
 
----
+
+
 
 ## Future Changelog Template
 

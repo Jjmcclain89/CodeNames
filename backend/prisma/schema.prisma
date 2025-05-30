@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  email       String   @unique
+  password    String
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  gamesPlayed Int      @default(0)
+  gamesWon    Int      @default(0)
+  
+  // Relations
+  hostedRooms GameRoom[] @relation("RoomHost")
+  playerSessions Player[]
+  
+  @@map("users")
+}
+
+model GameRoom {
+  id        String   @id @default(cuid())
+  name      String
+  hostId    String
+  isActive  Boolean  @default(true)
+  isPrivate Boolean  @default(false)
+  maxPlayers Int     @default(8)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  host      User     @relation("RoomHost", fields: [hostId], references: [id])
+  players   Player[]
+  gameState GameState?
+  
+  @@map("game_rooms")
+}
+
+model Player {
+  id          String   @id @default(cuid())
+  userId      String
+  roomId      String
+  username    String
+  team        String?  // 'red' | 'blue' | 'spectator'
+  role        String?  // 'spymaster' | 'operative'
+  isConnected Boolean  @default(true)
+  joinedAt    DateTime @default(now())
+  
+  // Relations
+  user User     @relation(fields: [userId], references: [id])
+  room GameRoom @relation(fields: [roomId], references: [id])
+  
+  @@unique([userId, roomId])
+  @@map("players")
+}
+
+model GameState {
+  id               String   @id @default(cuid())
+  roomId           String   @unique
+  status           String   @default("waiting") // 'waiting' | 'active' | 'finished'
+  currentTurn      String?  // 'red' | 'blue'
+  redSpymaster     String?
+  blueSpymaster    String?
+  currentClue      Json?
+  guessesRemaining Int      @default(0)
+  redAgentsLeft    Int      @default(9)
+  blueAgentsLeft   Int      @default(8)
+  winner           String?  // 'red' | 'blue'
+  board            Json     // Card array
+  turnHistory      Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relations
+  room GameRoom @relation(fields: [roomId], references: [id])
+  
+  @@map("game_states")
+}
