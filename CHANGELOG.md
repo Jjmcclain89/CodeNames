@@ -50,7 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Python Scripts Run
+
+
+
+
 - `python/setup_project.py` - Initial project structure and configuration setup (2025-05-29)
+- `python/fix_database_connection.py` - Fixed PostgreSQL connection and credentials (2025-05-29)
+- `python/fix_database_connection.py` - Fixed PostgreSQL connection and credentials (2025-05-29)
+- `python/fix_prisma_connection.py` - Fixed Prisma database connection issues (2025-05-29)
+- `python/check_port_conflicts.py` - Checked for port conflicts and created alternative configuration (2025-05-29)
 
 ---
 

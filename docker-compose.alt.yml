@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: codenames-db
+    environment:
+      POSTGRES_DB: codenames_dev
+      POSTGRES_USER: codenames_user
+      POSTGRES_PASSWORD: codenames_password
+    ports:
+      - "5433:5432"  # Changed from 5432 to 5433
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - codenames-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: codenames-redis
+    ports:
+      - "6380:6379"  # Changed from 6379 to 6380
+    networks:
+      - codenames-network
+
+volumes:
+  postgres_data:
+
+networks:
+  codenames-network:
+    driver: bridge
