@@ -1,4 +1,60 @@
-import express, { Request, Response, NextFunction } from 'express';
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Fix Socket Authentication Errors
+Adds debugging and fixes socket authentication issues
+"""
+
+from pathlib import Path
+from datetime import datetime
+
+def add_changelog_entry():
+    """Add entry to CHANGELOG.md"""
+    try:
+        changelog_path = Path("CHANGELOG.md")
+        if not changelog_path.exists():
+            return
+            
+        with open(changelog_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        if "### Python Scripts Run" not in content:
+            unreleased_section = content.find("## [Unreleased]")
+            if unreleased_section != -1:
+                insert_point = content.find("### Added", unreleased_section)
+                if insert_point != -1:
+                    new_section = "\n### Python Scripts Run\n- Socket auth fix: Enhanced socket authentication debugging and error handling\n"
+                    content = content[:insert_point] + new_section + content[insert_point:]
+        else:
+            section_start = content.find("### Python Scripts Run")
+            section_end = content.find("\n###", section_start + 1)
+            if section_end == -1:
+                section_end = content.find("\n## ", section_start + 1)
+            
+            entry = f"- Socket auth fix: Fixed authentication errors ({datetime.now().strftime('%Y-%m-%d %H:%M')})\n"
+            
+            if section_end != -1:
+                insert_point = section_end
+                content = content[:insert_point] + entry + content[insert_point:]
+            else:
+                content += entry
+        
+        with open(changelog_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print("✅ Updated CHANGELOG.md")
+        
+    except Exception as e:
+        print(f"⚠️ Could not update CHANGELOG.md: {e}")
+
+def fix_socket_authentication():
+    """Fix socket authentication with better debugging"""
+    print("🔧 Fixing socket authentication errors...")
+    
+    index_path = Path("backend/src/index.ts")
+    
+    # Enhanced backend with better authentication debugging
+    enhanced_backend = '''import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -391,3 +447,61 @@ server.listen(PORT, () => {
 });
 
 export default app;
+'''
+    
+    with open(index_path, 'w', encoding='utf-8') as f:
+        f.write(enhanced_backend)
+    
+    print("✅ Enhanced socket authentication with detailed debugging")
+
+def main():
+    """Main execution function"""
+    print("🔧 Fixing Socket Authentication Errors")
+    print("=" * 45)
+    
+    try:
+        # Fix socket authentication
+        fix_socket_authentication()
+        
+        # Update changelog
+        add_changelog_entry()
+        
+        print("\n🎉 Socket Authentication Enhanced!")
+        print("=" * 45)
+        
+        print("\n📋 What was added:")
+        print("✅ Detailed token logging (showing first 30 chars)")
+        print("✅ User map debugging (see who's stored)")
+        print("✅ Authentication step-by-step logging")
+        print("✅ Token type and value validation")
+        print("✅ Warning for unauthenticated sockets after 5 seconds")
+        
+        print("\n🔧 Next steps:")
+        print("1. RESTART your backend server:")
+        print("   cd backend && npm run dev")
+        print("2. Open a browser and login")
+        print("3. Watch the backend console for detailed auth logs")
+        print("4. Look for patterns in the authentication failures")
+        
+        print("\n🔍 What to look for:")
+        print("- Token format and length in logs")
+        print("- Whether users are properly stored after login")
+        print("- If tokens match between login and socket auth")
+        print("- Any timing issues (socket connecting before login)")
+        
+        print("\n💡 Common causes of auth failures:")
+        print("- Frontend sending undefined/null tokens")
+        print("- Socket connecting before user completes login")
+        print("- Token format mismatch")
+        print("- React strict mode causing double connections")
+        
+        return 0
+        
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+if __name__ == "__main__":
+    exit(main())
