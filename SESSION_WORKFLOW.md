@@ -21,6 +21,7 @@ python python/directory_mapper.py
 - [ ] Use **relative paths** from project root
 - [ ] Ask for files based on current issues, not assumptions
 - [ ] Focus on files relevant to current phase goals
+- [ ] It's better to ask for too many files than too few
 
 ### 4. Set Session Objectives
 - [ ] Define 2-3 specific, achievable goals

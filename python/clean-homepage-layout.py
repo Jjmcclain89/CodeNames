@@ -1,4 +1,29 @@
-import React, { useState, useEffect } from 'react';
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Clean Homepage Layout
+Reorganizes the homepage to prioritize game functionality and move debug/info to bottom
+"""
+
+import os
+from datetime import datetime
+
+def update_file_content(file_path, new_content):
+    """Update file with proper Windows encoding"""
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        return True
+    except Exception as e:
+        print(f"Error updating {file_path}: {e}")
+        return False
+
+def main():
+    print("🎨 Cleaning up Homepage Layout...")
+    
+    # Create clean, priority-focused homepage layout
+    clean_homepage = '''import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ChatRoom from '../components/Chat/ChatRoom';
 
@@ -448,3 +473,55 @@ const HomePage: React.FC = () => {
 };
 
 export default HomePage;
+'''
+
+    # Update the HomePage
+    if update_file_content('frontend/src/pages/HomePage.tsx', clean_homepage):
+        print("✅ Updated HomePage with clean, priority-focused layout")
+    else:
+        print("❌ Failed to update HomePage")
+        return
+    
+    # Update changelog
+    try:
+        changelog_path = 'CHANGELOG.md'
+        with open(changelog_path, 'r', encoding='utf-8') as f:
+            changelog = f.read()
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        new_entry = f'- Homepage Layout Cleanup: Reorganized UI to prioritize game functionality over debug tools ({timestamp})'
+        
+        if '### Python Scripts Run' in changelog:
+            updated_changelog = changelog.replace(
+                '### Python Scripts Run',
+                f'### Python Scripts Run\n{new_entry}'
+            )
+            
+            with open(changelog_path, 'w', encoding='utf-8') as f:
+                f.write(updated_changelog)
+            print("✅ Updated CHANGELOG.md")
+    except Exception as e:
+        print(f"Note: Could not update changelog: {e}")
+    
+    print(f"\n🎨 Homepage Layout Cleanup Complete!")
+    print("\n🎯 New Layout Priority:")
+    print("1. **Main Game Section** (top priority)")
+    print("   • Create New Game (large, prominent)")
+    print("   • Join with Code (large, prominent)")
+    print("   • Browse Active Games (featured section)")
+    print("\n2. **Secondary Content** (middle)")
+    print("   • Global Chat")
+    print("   • How to Play guide")
+    print("\n3. **Debug/Admin Tools** (bottom)")
+    print("   • Connection status")
+    print("   • Debug tools (collapsed by default)")
+    print("\n✨ Visual Improvements:")
+    print("• Larger, more prominent buttons")
+    print("• Better spacing and typography")
+    print("• Centered title")
+    print("• Enhanced game cards with better styling")
+    print("• Debug tools collapsed to reduce clutter")
+    print("\n🎮 The homepage now focuses on what matters: creating and joining games!")
+
+if __name__ == "__main__":
+    main()

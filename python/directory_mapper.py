@@ -1,216 +1,128 @@
-#!/usr/bin/env python3
-"""
-Directory Structure Mapper for Codenames Project
-Generates a comprehensive directory tree to help track project structure
-"""
-
 import os
-import json
-from datetime import datetime
+import sys
 
-def should_ignore(path, ignore_patterns):
-    """Check if a path should be ignored based on common patterns"""
-    ignore_list = [
+def map_directory_structure(root_path='.', max_depth=4, current_depth=0):
+    """Maps the project directory structure with file details, ignoring unnecessary folders."""
+    
+    # Folders to ignore
+    ignore_folders = {
         'node_modules', '.git', 'dist', 'build', '.next', 
-        '.vscode', '.idea', '__pycache__', '.pytest_cache',
-        'coverage', '.nyc_output', '.env.local', '.env.production',
-        '.DS_Store', 'Thumbs.db', '*.log', '.cache', 'temp', 'tmp'
-    ]
-    ignore_list.extend(ignore_patterns)
-    
-    for pattern in ignore_list:
-        if pattern in path or path.endswith(pattern.replace('*', '')):
-            return True
-    return False
-
-def generate_tree(root_path, max_depth=4, ignore_patterns=None):
-    """Generate directory tree structure"""
-    if ignore_patterns is None:
-        ignore_patterns = []
-    
-    tree = {
-        'name': os.path.basename(root_path) or root_path,
-        'type': 'directory',
-        'path': root_path,
-        'children': []
+        '__pycache__', '.vscode', '.idea', 'coverage',
+        'logs', 'tmp', 'temp'
     }
     
-    def build_tree(current_path, current_depth=0):
-        if current_depth >= max_depth:
-            return None
-            
-        items = []
-        try:
-            for item in sorted(os.listdir(current_path)):
-                item_path = os.path.join(current_path, item)
-                
-                if should_ignore(item_path, ignore_patterns):
-                    continue
-                
-                if os.path.isdir(item_path):
-                    subtree = build_tree(item_path, current_depth + 1)
-                    if subtree:
-                        items.append({
-                            'name': item,
-                            'type': 'directory',
-                            'path': item_path,
-                            'children': subtree
-                        })
-                    else:
-                        items.append({
-                            'name': item,
-                            'type': 'directory',
-                            'path': item_path,
-                            'children': ['...'] if current_depth + 1 >= max_depth else []
-                        })
-                else:
-                    # Get file size
-                    try:
-                        size = os.path.getsize(item_path)
-                        size_str = f"{size:,} bytes" if size < 1024 else f"{size/1024:.1f} KB"
-                    except:
-                        size_str = "unknown"
-                    
-                    items.append({
-                        'name': item,
-                        'type': 'file',
-                        'path': item_path,
-                        'size': size_str
-                    })
-        except PermissionError:
-            pass
-        
+    # File extensions to ignore
+    ignore_extensions = {'.log', '.tmp', '.cache'}
+    
+    items = []
+    if current_depth >= max_depth:
         return items
     
-    tree['children'] = build_tree(root_path)
-    return tree
+    try:
+        for item in sorted(os.listdir(root_path)):
+            if item.startswith('.') and item not in {'.env.example', '.gitignore', '.env.template'}:
+                continue
+                
+            # Skip ignored folders
+            if item in ignore_folders:
+                continue
+                
+            item_path = os.path.join(root_path, item)
+            relative_path = os.path.relpath(item_path, '.')
+            
+            if os.path.isdir(item_path):
+                # Directory
+                indent = "  " * current_depth
+                items.append(f"{indent}{item}/")
+                
+                # Recursively map subdirectories
+                subdirectory_items = map_directory_structure(
+                    item_path, max_depth, current_depth + 1
+                )
+                items.extend(subdirectory_items)
+            else:
+                # File - check if we should ignore it
+                _, ext = os.path.splitext(item)
+                if ext in ignore_extensions:
+                    continue
+                    
+                indent = "  " * current_depth
+                try:
+                    size = os.path.getsize(item_path)
+                    if size < 1024:
+                        size_str = f"{size}B"
+                    elif size < 1024 * 1024:
+                        size_str = f"{size // 1024}KB"
+                    else:
+                        size_str = f"{size // (1024 * 1024)}MB"
+                    
+                    items.append(f"{indent}{item} ({size_str})")
+                except OSError:
+                    items.append(f"{indent}{item} (size unknown)")
+    
+    except PermissionError:
+        pass
+    except FileNotFoundError:
+        pass
+    
+    return items
 
-def print_tree(tree_data, prefix="", is_last=True, show_size=True):
-    """Print the tree in a readable format"""
-    if tree_data['type'] == 'directory':
-        print(f"{prefix}{'└── ' if is_last else '├── '}{tree_data['name']}/")
-        new_prefix = prefix + ("    " if is_last else "│   ")
-        
-        children = tree_data.get('children', [])
-        if children == ['...']:
-            print(f"{new_prefix}└── ...")
-        else:
-            for i, child in enumerate(children):
-                child_is_last = i == len(children) - 1
-                print_tree(child, new_prefix, child_is_last, show_size)
-    else:
-        size_info = f" ({tree_data.get('size', 'unknown')})" if show_size else ""
-        print(f"{prefix}{'└── ' if is_last else '├── '}{tree_data['name']}{size_info}")
-
-def save_structure_json(tree_data, output_file):
-    """Save the tree structure as JSON for programmatic use"""
-    with open(output_file, 'w') as f:
-        json.dump(tree_data, f, indent=2)
-
-def generate_file_list(tree_data, file_types=None):
-    """Generate a flat list of files matching specific types"""
-    if file_types is None:
-        file_types = ['.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.env']
-    
-    files = []
-    
-    def extract_files(node):
-        if node['type'] == 'file':
-            for ext in file_types:
-                if node['name'].endswith(ext):
-                    files.append(node['path'])
-                    break
-        elif node['type'] == 'directory' and 'children' in node:
-            for child in node['children']:
-                if isinstance(child, dict):
-                    extract_files(child)
-    
-    extract_files(tree_data)
-    return sorted(files)
-
-def main():
-    """Main function to generate directory structure"""
-    root_path = os.getcwd()
-    print(f"🗂️  Mapping directory structure for: {root_path}")
-    print(f"📅 Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 60)
-    
-    # Generate tree structure
-    tree = generate_tree(root_path, max_depth=4)
-    
-    # Print the tree
-    print_tree(tree)
-    
-    print("\n" + "=" * 60)
-    
-    # Generate file lists for key file types
-    important_files = generate_file_list(tree, ['.ts', '.tsx', '.js', '.jsx'])
-    config_files = generate_file_list(tree, ['.json', '.env', '.example'])
-    doc_files = generate_file_list(tree, ['.md', '.txt'])
-    
-    print(f"\n📁 Key Source Files ({len(important_files)} found):")
-    for file in important_files[:20]:  # Show first 20
-        rel_path = os.path.relpath(file, root_path)
-        print(f"   {rel_path}")
-    if len(important_files) > 20:
-        print(f"   ... and {len(important_files) - 20} more files")
-    
-    print(f"\n⚙️  Configuration Files ({len(config_files)} found):")
-    for file in config_files:
-        rel_path = os.path.relpath(file, root_path)
-        print(f"   {rel_path}")
-    
-    print(f"\n📄 Documentation Files ({len(doc_files)} found):")
-    for file in doc_files:
-        rel_path = os.path.relpath(file, root_path)
-        print(f"   {rel_path}")
-    
-    # Save JSON structure for programmatic access
-    json_output = os.path.join(root_path, 'project_structure.json')
-    save_structure_json(tree, json_output)
-    print(f"\n💾 Full structure saved to: project_structure.json")
-    
-    # Update changelog
-    changelog_path = os.path.join(root_path, 'CHANGELOG.md')
-    if os.path.exists(changelog_path):
-        try:
-            with open(changelog_path, 'r') as f:
+def update_changelog():
+    """Update changelog with script execution info."""
+    try:
+        changelog_path = "CHANGELOG.md"
+        if os.path.exists(changelog_path):
+            with open(changelog_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # Add entry to unreleased section
-            script_entry = f"""- **Python Script**: Directory structure mapper - Generated comprehensive project file tree and structure analysis ({datetime.now().strftime('%Y-%m-%d')})"""
+            # Find Python Scripts section
+            if "## Python Scripts Run" not in content:
+                # Add section if it doesn't exist
+                content += "\n\n## Python Scripts Run\n"
             
-            if '### Added' in content and '## [Unreleased]' in content:
-                # Find the Added section under Unreleased
-                lines = content.split('\n')
-                new_lines = []
-                in_unreleased = False
-                added_entry = False
+            # Add new entry
+            new_entry = "- directory_mapper.py: Generated clean project structure to project_structure.txt (ignored node_modules)\n"
+            
+            # Insert after the Python Scripts Run header
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                if line.strip() == "## Python Scripts Run":
+                    lines.insert(i + 1, new_entry)
+                    break
+            
+            # Write back
+            with open(changelog_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines))
                 
-                for line in lines:
-                    new_lines.append(line)
-                    if '## [Unreleased]' in line:
-                        in_unreleased = True
-                    elif line.startswith('## [') and '## [Unreleased]' not in line:
-                        in_unreleased = False
-                    elif in_unreleased and '### Added' in line and not added_entry:
-                        new_lines.append(script_entry)
-                        added_entry = True
-                
-                with open(changelog_path, 'w') as f:
-                    f.write('\n'.join(new_lines))
-                
-                print(f"✅ Updated CHANGELOG.md with script entry")
-            else:
-                print("⚠️  Could not automatically update CHANGELOG.md")
-        except Exception as e:
-            print(f"⚠️  Error updating changelog: {e}")
+    except Exception as e:
+        pass  # Silently fail if changelog update doesn't work
+
+def main():
+    output_file = "project_structure.txt"
     
-    print("\n🎯 Next Steps:")
-    print("   1. Review the file structure above")
-    print("   2. Share specific files you need for debugging")
-    print("   3. Use relative paths from project root")
-    print("   4. Check project_structure.json for complete details")
+    structure = map_directory_structure()
+    
+    # Create output content
+    output_content = []
+    output_content.append("CODENAMES PROJECT STRUCTURE (Clean)")
+    output_content.append("=" * 50)
+    output_content.extend(structure)
+    output_content.append("\n" + "=" * 50)
+    output_content.append(f"Total items: {len(structure)}")
+    
+    # Write to file
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(output_content))
+        print(f"Project structure saved to {output_file}")
+    except Exception as e:
+        print(f"Error writing to file: {e}")
+        # Fallback to console output
+        for line in output_content:
+            print(line)
+    
+    # Update changelog
+    update_changelog()
 
 if __name__ == "__main__":
     main()

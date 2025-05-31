@@ -34,6 +34,9 @@ class SocketService {
   }
 
   connect(): Socket {
+    // Make socket service accessible for debugging
+    (window as any).socketService = this;
+
     if (this._socket?.connected) {
       console.log('📡 Socket already connected');
       return this._socket;

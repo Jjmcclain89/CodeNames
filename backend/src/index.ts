@@ -3,6 +3,8 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { gameService } from './services/gameService';
+import gameRoutes from './routes/games';
 
 // Load environment variables
 dotenv.config();
@@ -54,10 +56,16 @@ app.get('/api/health', (req: Request, res: Response): void => {
     endpoints: [
       'GET /api/health',
       'POST /api/auth/login', 
-      'POST /api/auth/verify'
+      'POST /api/auth/verify',
+      'GET /api/games/test',
+      'POST /api/games/create',
+      'POST /api/games/join'
     ]
   });
 });
+
+// Games routes
+app.use('/api/games', gameRoutes);
 
 // Auth routes
 app.post('/api/auth/login', (req: Request, res: Response): void => {
@@ -169,6 +177,181 @@ app.post('/api/auth/verify', (req: Request, res: Response): void => {
 console.log('🔗 API routes configured');
 
 // ========================================
+// GAME SOCKET HANDLERS - PHASE 2
+// ========================================
+
+import { GameService } from './services/gameService';
+
+// Add game socket handlers to existing socket connection
+function addGameHandlers(socket: any, io: any) {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    // safe_print('⚠️ Game handler called for unauthenticated socket:', socket.id);
+    return;
+  }
+
+  // Game creation and management
+  socket.on('game:create', () => {
+    try {
+      const roomCode = 'GLOBAL'; // For now, use global room for games
+      const game = gameService.createGameForRoom(roomCode);
+      
+      // Add player to game
+      const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+      
+      if (success) {
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        socket.to(roomCode).emit('game:player-joined', gameState.players.find((p: any )=> p.id === user.id));
+        console.log('🎮 Game created for room:', roomCode, 'by:', user.username);
+      } else {
+        socket.emit('game:error', 'Failed to create game');
+      }
+    } catch (error) {
+      console.error('❌ Error creating game:', error);
+      socket.emit('game:error', 'Failed to create game');
+    }
+  });
+
+  socket.on('game:start', () => {
+    try {
+      const result = gameService.startGame(user.id);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          console.log('🚀 Game started by:', user.username);
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to start game');
+      }
+    } catch (error) {
+      console.error('❌ Error starting game:', error);
+      socket.emit('game:error', 'Failed to start game');
+    }
+  });
+
+  socket.on('game:join-team', (team: string, role: string) => {
+    try {
+      // Get or create game for current room
+      const roomCode = 'GLOBAL';
+      let game = gameService.getGameForRoom(roomCode);
+      
+      if (!game) {
+        game = gameService.createGameForRoom(roomCode);
+        gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+      }
+
+      const result = gameService.assignPlayerToTeam(user.id, team as any, role as any);
+      
+      if (result.success) {
+        const gameState = game.getGame();
+        io.to(roomCode).emit('game:state-updated', gameState);
+        console.log('👥 Player', user.username, 'joined', team, 'team as', role);
+      } else {
+        socket.emit('game:error', result.error || 'Failed to join team');
+      }
+    } catch (error) {
+      console.error('❌ Error joining team:', error);
+      socket.emit('game:error', 'Failed to join team');
+    }
+  });
+
+  socket.on('game:give-clue', (data: { word: string; number: number }) => {
+    try {
+      const result = gameService.giveClue(user.id, data.word, data.number);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          if (gameState.currentClue) {
+            io.to(gameState.roomCode).emit('game:clue-given', gameState.currentClue);
+          }
+          console.log('💡 Clue given by', user.username + ':', data.word, data.number);
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to give clue');
+      }
+    } catch (error) {
+      console.error('❌ Error giving clue:', error);
+      socket.emit('game:error', 'Failed to give clue');
+    }
+  });
+
+  socket.on('game:reveal-card', (cardId: string) => {
+    try {
+      const result = gameService.revealCard(user.id, cardId);
+      
+      if (result.success && result.card) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.roomCode).emit('game:card-revealed', result.card);
+          
+          if (result.gameEnded && result.winner) {
+            io.to(gameState.roomCode).emit('game:game-ended', result.winner);
+            console.log('🎉 Game ended! Winner:', result.winner);
+          }
+          
+          console.log('🎯 Card revealed by', user.username + ':', result.card.word, '(' + result.card.team + ')');
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to reveal card');
+      }
+    } catch (error) {
+      console.error('❌ Error revealing card:', error);
+      socket.emit('game:error', 'Failed to reveal card');
+    }
+  });
+
+  socket.on('game:end-turn', () => {
+    try {
+      const result = gameService.endTurn(user.id);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.roomCode).emit('game:turn-changed', gameState.currentTurn);
+          console.log('⏭️ Turn ended by', user.username, '- now', gameState.currentTurn, 'turn');
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to end turn');
+      }
+    } catch (error) {
+      console.error('❌ Error ending turn:', error);
+      socket.emit('game:error', 'Failed to end turn');
+    }
+  });
+
+  socket.on('game:reset', () => {
+    try {
+      const result = gameService.resetGame(user.id);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          console.log('🔄 Game reset by:', user.username);
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to reset game');
+      }
+    } catch (error) {
+      console.error('❌ Error resetting game:', error);
+      socket.emit('game:error', 'Failed to reset game');
+    }
+  });
+}
+
+// ========================================
 // SOCKET.IO SETUP WITH ENHANCED DEBUGGING
 // ========================================
 
@@ -266,7 +449,7 @@ io.on('connection', (socket) => {
       
       // Send recent messages
       socket.emit('recent-messages', { messages: globalRoom.messages.slice(-10) });
-      
+      addGameHandlers(socket, io);
       console.log('✅ Socket authenticated successfully for:', user.username, 'in GLOBAL room');
     } else {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
@@ -304,6 +487,101 @@ io.on('connection', (socket) => {
     
     console.log(`💬 Message from ${user.username}: ${data.message}`);
   });
+
+  // Room-specific socket handlers
+  socket.on('join-game-room', (gameCode: string) => {
+    const user = connectedUsers.get(socket.id);
+    if (!user) {
+      socket.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+    
+    console.log(`🎮 User ${user.username} joining game room: ${gameCode}`);
+    
+    // Leave any previous game rooms
+    const rooms = Array.from(socket.rooms);
+    rooms.forEach(room => {
+      if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+        socket.leave(room);
+        console.log(`📤 User ${user.username} left room: ${room}`);
+      }
+    });
+    
+    // Join the new game room
+    socket.join(gameCode);
+    
+    // Import gameRooms from routes
+    const { gameRooms } = require('./routes/games');
+    const gameRoom = gameRooms.get(gameCode);
+    
+    if (gameRoom) {
+      // Update player socket ID in game room
+      const player = gameRoom.players.find((p: any) => p.username === user.username);
+      if (player) {
+        player.socketId = socket.id;
+      }
+      
+      // Notify others in the room
+      socket.to(gameCode).emit('player-joined-room', {
+        player: { username: user.username, id: user.id },
+        message: `${user.username} joined the game`,
+        playerCount: gameRoom.players.length
+      });
+      
+      // Send current room state to the joining player
+      socket.emit('room-state', {
+        gameCode: gameCode,
+        players: gameRoom.players.map((p: any) => ({
+          id: p.id,
+          username: p.username,
+          joinedAt: p.joinedAt
+        })),
+        messages: gameRoom.messages.slice(-20)
+      });
+      
+      console.log(`✅ User ${user.username} joined game room ${gameCode}`);
+    } else {
+      socket.emit('error', { message: 'Game room not found' });
+    }
+  });
+
+  socket.on('send-room-message', (data: { gameCode: string; message: string }) => {
+    const user = connectedUsers.get(socket.id);
+    if (!user) {
+      socket.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+    
+    const { gameCode, message } = data;
+    console.log(`💬 Room message from ${user.username} in ${gameCode}: ${message}`);
+    
+    const { gameRooms } = require('./routes/games');
+    const gameRoom = gameRooms.get(gameCode);
+    
+    if (gameRoom) {
+      const roomMessage = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        username: user.username,
+        userId: user.id,
+        text: message,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Add to room messages
+      gameRoom.messages.push(roomMessage);
+      
+      // Keep only last 50 messages
+      if (gameRoom.messages.length > 50) {
+        gameRoom.messages = gameRoom.messages.slice(-50);
+      }
+      
+      // Broadcast to all users in the room
+      io.to(gameCode).emit('new-room-message', roomMessage);
+    } else {
+      socket.emit('error', { message: 'Game room not found' });
+    }
+  });
+
   
   socket.on('disconnect', () => {
     const user = connectedUsers.get(socket.id);
@@ -325,6 +603,9 @@ io.on('connection', (socket) => {
       io.to('GLOBAL').emit('room-users', { users: roomUsers });
       
       // Remove from connected users
+
+      // Clean up game state for Phase 2
+      if (user) gameService.removePlayerFromAllGames(user.id);
       connectedUsers.delete(socket.id);
     } else {
       console.log('📡 Socket disconnected:', socket.id, '(unauthenticated)');
@@ -356,7 +637,10 @@ app.use('/api/*', (req: Request, res: Response): void => {
     availableEndpoints: [
       'GET /api/health',
       'POST /api/auth/login',
-      'POST /api/auth/verify'
+      'POST /api/auth/verify',
+      'GET /api/games/test',
+      'POST /api/games/create',
+      'POST /api/games/join'
     ]
   });
 });
@@ -384,6 +668,7 @@ server.listen(PORT, () => {
   console.log('📡 Socket.io with enhanced auth debugging');
   console.log(`🔗 API endpoints: http://localhost:${PORT}/api`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🎮 Games API: http://localhost:${PORT}/api/games/test`);
   console.log('💬 Global chat room ready');
   console.log('🔍 Enhanced authentication logging enabled');
   console.log('🎉 ================================');

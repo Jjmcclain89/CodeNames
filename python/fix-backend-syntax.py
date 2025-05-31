@@ -1,64 +1,37 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
-Fix Socket Authentication Errors
-Adds debugging and fixes socket authentication issues
+Fix Backend Syntax Error
+Repairs the TypeScript syntax error caused by the previous script
 """
 
-from pathlib import Path
+import os
 from datetime import datetime
 
-def add_changelog_entry():
-    """Add entry to CHANGELOG.md"""
+def update_file_content(file_path, new_content):
+    """Update file with proper Windows encoding"""
     try:
-        changelog_path = Path("CHANGELOG.md")
-        if not changelog_path.exists():
-            return
-            
-        with open(changelog_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        if "### Python Scripts Run" not in content:
-            unreleased_section = content.find("## [Unreleased]")
-            if unreleased_section != -1:
-                insert_point = content.find("### Added", unreleased_section)
-                if insert_point != -1:
-                    new_section = "\n### Python Scripts Run\n- Socket auth fix: Enhanced socket authentication debugging and error handling\n"
-                    content = content[:insert_point] + new_section + content[insert_point:]
-        else:
-            section_start = content.find("### Python Scripts Run")
-            section_end = content.find("\n###", section_start + 1)
-            if section_end == -1:
-                section_end = content.find("\n## ", section_start + 1)
-            
-            entry = f"- Socket auth fix: Fixed authentication errors ({datetime.now().strftime('%Y-%m-%d %H:%M')})\n"
-            
-            if section_end != -1:
-                insert_point = section_end
-                content = content[:insert_point] + entry + content[insert_point:]
-            else:
-                content += entry
-        
-        with open(changelog_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        print("✅ Updated CHANGELOG.md")
-        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        return True
     except Exception as e:
-        print(f"⚠️ Could not update CHANGELOG.md: {e}")
+        print(f"Error updating {file_path}: {e}")
+        return False
 
-def fix_socket_authentication():
-    """Fix socket authentication with better debugging"""
-    print("🔧 Fixing socket authentication errors...")
+def main():
+    print("🔧 Fixing Backend Syntax Error...")
     
-    index_path = Path("backend/src/index.ts")
+    # Create a clean, working version of the backend index.ts
+    # Based on the original but with properly added games routes
     
-    # Enhanced backend with better authentication debugging
-    enhanced_backend = '''import express, { Request, Response, NextFunction } from 'express';
+    fixed_backend_content = '''import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { gameService } from './services/gameService';
+import gameRoutes from './routes/games';
 
 // Load environment variables
 dotenv.config();
@@ -110,10 +83,16 @@ app.get('/api/health', (req: Request, res: Response): void => {
     endpoints: [
       'GET /api/health',
       'POST /api/auth/login', 
-      'POST /api/auth/verify'
+      'POST /api/auth/verify',
+      'GET /api/games/test',
+      'POST /api/games/create',
+      'POST /api/games/join'
     ]
   });
 });
+
+// Games routes
+app.use('/api/games', gameRoutes);
 
 // Auth routes
 app.post('/api/auth/login', (req: Request, res: Response): void => {
@@ -225,6 +204,181 @@ app.post('/api/auth/verify', (req: Request, res: Response): void => {
 console.log('🔗 API routes configured');
 
 // ========================================
+// GAME SOCKET HANDLERS - PHASE 2
+// ========================================
+
+import { GameService } from './services/gameService';
+
+// Add game socket handlers to existing socket connection
+function addGameHandlers(socket: any, io: any) {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    // safe_print('⚠️ Game handler called for unauthenticated socket:', socket.id);
+    return;
+  }
+
+  // Game creation and management
+  socket.on('game:create', () => {
+    try {
+      const roomCode = 'GLOBAL'; // For now, use global room for games
+      const game = gameService.createGameForRoom(roomCode);
+      
+      // Add player to game
+      const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+      
+      if (success) {
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        socket.to(roomCode).emit('game:player-joined', gameState.players.find((p: any )=> p.id === user.id));
+        console.log('🎮 Game created for room:', roomCode, 'by:', user.username);
+      } else {
+        socket.emit('game:error', 'Failed to create game');
+      }
+    } catch (error) {
+      console.error('❌ Error creating game:', error);
+      socket.emit('game:error', 'Failed to create game');
+    }
+  });
+
+  socket.on('game:start', () => {
+    try {
+      const result = gameService.startGame(user.id);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          console.log('🚀 Game started by:', user.username);
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to start game');
+      }
+    } catch (error) {
+      console.error('❌ Error starting game:', error);
+      socket.emit('game:error', 'Failed to start game');
+    }
+  });
+
+  socket.on('game:join-team', (team: string, role: string) => {
+    try {
+      // Get or create game for current room
+      const roomCode = 'GLOBAL';
+      let game = gameService.getGameForRoom(roomCode);
+      
+      if (!game) {
+        game = gameService.createGameForRoom(roomCode);
+        gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+      }
+
+      const result = gameService.assignPlayerToTeam(user.id, team as any, role as any);
+      
+      if (result.success) {
+        const gameState = game.getGame();
+        io.to(roomCode).emit('game:state-updated', gameState);
+        console.log('👥 Player', user.username, 'joined', team, 'team as', role);
+      } else {
+        socket.emit('game:error', result.error || 'Failed to join team');
+      }
+    } catch (error) {
+      console.error('❌ Error joining team:', error);
+      socket.emit('game:error', 'Failed to join team');
+    }
+  });
+
+  socket.on('game:give-clue', (data: { word: string; number: number }) => {
+    try {
+      const result = gameService.giveClue(user.id, data.word, data.number);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          if (gameState.currentClue) {
+            io.to(gameState.roomCode).emit('game:clue-given', gameState.currentClue);
+          }
+          console.log('💡 Clue given by', user.username + ':', data.word, data.number);
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to give clue');
+      }
+    } catch (error) {
+      console.error('❌ Error giving clue:', error);
+      socket.emit('game:error', 'Failed to give clue');
+    }
+  });
+
+  socket.on('game:reveal-card', (cardId: string) => {
+    try {
+      const result = gameService.revealCard(user.id, cardId);
+      
+      if (result.success && result.card) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.roomCode).emit('game:card-revealed', result.card);
+          
+          if (result.gameEnded && result.winner) {
+            io.to(gameState.roomCode).emit('game:game-ended', result.winner);
+            console.log('🎉 Game ended! Winner:', result.winner);
+          }
+          
+          console.log('🎯 Card revealed by', user.username + ':', result.card.word, '(' + result.card.team + ')');
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to reveal card');
+      }
+    } catch (error) {
+      console.error('❌ Error revealing card:', error);
+      socket.emit('game:error', 'Failed to reveal card');
+    }
+  });
+
+  socket.on('game:end-turn', () => {
+    try {
+      const result = gameService.endTurn(user.id);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.roomCode).emit('game:turn-changed', gameState.currentTurn);
+          console.log('⏭️ Turn ended by', user.username, '- now', gameState.currentTurn, 'turn');
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to end turn');
+      }
+    } catch (error) {
+      console.error('❌ Error ending turn:', error);
+      socket.emit('game:error', 'Failed to end turn');
+    }
+  });
+
+  socket.on('game:reset', () => {
+    try {
+      const result = gameService.resetGame(user.id);
+      
+      if (result.success) {
+        const game = gameService.getGameByPlayer(user.id);
+        if (game) {
+          const gameState = game.getGame();
+          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          console.log('🔄 Game reset by:', user.username);
+        }
+      } else {
+        socket.emit('game:error', result.error || 'Failed to reset game');
+      }
+    } catch (error) {
+      console.error('❌ Error resetting game:', error);
+      socket.emit('game:error', 'Failed to reset game');
+    }
+  });
+}
+
+// ========================================
 // SOCKET.IO SETUP WITH ENHANCED DEBUGGING
 // ========================================
 
@@ -322,7 +476,7 @@ io.on('connection', (socket) => {
       
       // Send recent messages
       socket.emit('recent-messages', { messages: globalRoom.messages.slice(-10) });
-      
+      addGameHandlers(socket, io);
       console.log('✅ Socket authenticated successfully for:', user.username, 'in GLOBAL room');
     } else {
       socket.emit('authenticated', { success: false, error: 'Invalid token' });
@@ -381,6 +535,9 @@ io.on('connection', (socket) => {
       io.to('GLOBAL').emit('room-users', { users: roomUsers });
       
       // Remove from connected users
+
+      // Clean up game state for Phase 2
+      if (user) gameService.removePlayerFromAllGames(user.id);
       connectedUsers.delete(socket.id);
     } else {
       console.log('📡 Socket disconnected:', socket.id, '(unauthenticated)');
@@ -412,7 +569,10 @@ app.use('/api/*', (req: Request, res: Response): void => {
     availableEndpoints: [
       'GET /api/health',
       'POST /api/auth/login',
-      'POST /api/auth/verify'
+      'POST /api/auth/verify',
+      'GET /api/games/test',
+      'POST /api/games/create',
+      'POST /api/games/join'
     ]
   });
 });
@@ -440,6 +600,7 @@ server.listen(PORT, () => {
   console.log('📡 Socket.io with enhanced auth debugging');
   console.log(`🔗 API endpoints: http://localhost:${PORT}/api`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🎮 Games API: http://localhost:${PORT}/api/games/test`);
   console.log('💬 Global chat room ready');
   console.log('🔍 Enhanced authentication logging enabled');
   console.log('🎉 ================================');
@@ -448,60 +609,47 @@ server.listen(PORT, () => {
 
 export default app;
 '''
-    
-    with open(index_path, 'w', encoding='utf-8') as f:
-        f.write(enhanced_backend)
-    
-    print("✅ Enhanced socket authentication with detailed debugging")
 
-def main():
-    """Main execution function"""
-    print("🔧 Fixing Socket Authentication Errors")
-    print("=" * 45)
+    # Update the backend index.ts with the corrected content
+    if update_file_content('backend/src/index.ts', fixed_backend_content):
+        print("✅ Fixed backend/src/index.ts syntax errors")
+    else:
+        print("❌ Failed to fix backend/src/index.ts")
+        return
     
+    # Update changelog
     try:
-        # Fix socket authentication
-        fix_socket_authentication()
+        changelog_path = 'CHANGELOG.md'
+        with open(changelog_path, 'r', encoding='utf-8') as f:
+            changelog = f.read()
         
-        # Update changelog
-        add_changelog_entry()
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        new_entry = f'- Backend Syntax Fix: Repaired TypeScript compilation errors and properly registered games routes ({timestamp})'
         
-        print("\n🎉 Socket Authentication Enhanced!")
-        print("=" * 45)
-        
-        print("\n📋 What was added:")
-        print("✅ Detailed token logging (showing first 30 chars)")
-        print("✅ User map debugging (see who's stored)")
-        print("✅ Authentication step-by-step logging")
-        print("✅ Token type and value validation")
-        print("✅ Warning for unauthenticated sockets after 5 seconds")
-        
-        print("\n🔧 Next steps:")
-        print("1. RESTART your backend server:")
-        print("   cd backend && npm run dev")
-        print("2. Open a browser and login")
-        print("3. Watch the backend console for detailed auth logs")
-        print("4. Look for patterns in the authentication failures")
-        
-        print("\n🔍 What to look for:")
-        print("- Token format and length in logs")
-        print("- Whether users are properly stored after login")
-        print("- If tokens match between login and socket auth")
-        print("- Any timing issues (socket connecting before login)")
-        
-        print("\n💡 Common causes of auth failures:")
-        print("- Frontend sending undefined/null tokens")
-        print("- Socket connecting before user completes login")
-        print("- Token format mismatch")
-        print("- React strict mode causing double connections")
-        
-        return 0
-        
+        if '### Python Scripts Run' in changelog:
+            updated_changelog = changelog.replace(
+                '### Python Scripts Run',
+                f'### Python Scripts Run\n{new_entry}'
+            )
+            
+            with open(changelog_path, 'w', encoding='utf-8') as f:
+                f.write(updated_changelog)
+            print("✅ Updated CHANGELOG.md")
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
+        print(f"Note: Could not update changelog: {e}")
+    
+    print(f"\n🎉 Backend Syntax Fix Complete!")
+    print("\n🔧 What was fixed:")
+    print("• Repaired TypeScript syntax errors in availableEndpoints array")
+    print("• Properly added: import gameRoutes from './routes/games';")
+    print("• Properly added: app.use('/api/games', gameRoutes);")
+    print("• Clean, working backend index.ts file")
+    print("\n🎯 Next Steps:")
+    print("1. Your backend should start without errors now")
+    print("2. Test: http://localhost:3001/api/games/test in browser")
+    print("3. Click 'Test API Connection' on homepage")
+    print("4. Try 'Create Game' - should generate codes and work!")
+    print("\n💡 The games routes are now properly registered!")
 
 if __name__ == "__main__":
-    exit(main())
+    main()

@@ -3,21 +3,20 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import RoomPage from './pages/RoomPage';
+import GamePage from './pages/GamePage';
 import DebugPage from './pages/DebugPage';
+import GameDebugPage from './pages/GameDebugPage';
 import authService from './services/authService';
 import socketService from './services/socketService';
 import './App.css';
-
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
-
   useEffect(() => {
     const initAuth = async () => {
       const token = authService.getToken();
       const savedUser = authService.getUser();
-
       if (token && savedUser) {
         // Verify token is still valid
         const result = await authService.verifyToken(token);
@@ -33,10 +32,8 @@ function App() {
       }
       setIsLoading(false);
     };
-
     initAuth();
   }, []);
-
   const handleLogin = (userData: any, token: string) => {
     setIsAuthenticated(true);
     setUser(userData);
@@ -44,14 +41,12 @@ function App() {
     socketService.connect();
     socketService.authenticate(token);
   };
-
   const handleLogout = () => {
     authService.logout();
     socketService.disconnect();
     setIsAuthenticated(false);
     setUser(null);
   };
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -59,7 +54,6 @@ function App() {
       </div>
     );
   }
-
   return (
     <Router>
       <div className="App min-h-screen bg-gray-50">
@@ -79,36 +73,37 @@ function App() {
             )}
           </div>
         </header>
-        
         <main className="container mx-auto p-4">
           <Routes>
-            <Route 
-              path="/login" 
+            <Route
+              path="/login"
               element={
-                !isAuthenticated ? 
-                <LoginPage onLogin={handleLogin} /> : 
+                !isAuthenticated ?
+                <LoginPage onLogin={handleLogin} /> :
                 <Navigate to="/" replace />
-              } 
+              }
             />
-            <Route 
-              path="/" 
+            <Route
+              path="/"
               element={
-                isAuthenticated ? 
-                <HomePage /> : 
+                isAuthenticated ?
+                <HomePage /> :
                 <Navigate to="/login" replace />
-              } 
+              }
             />
-            <Route 
-              path="/room/:roomCode" 
+            <Route
+              path="/room/:roomCode"
               element={
-                isAuthenticated ? 
-                <RoomPage /> : 
+                isAuthenticated ?
+                <RoomPage /> :
                 <Navigate to="/login" replace />
-              } 
+              }
             />
-                      <Route 
-              path="/debug" 
-              element={<DebugPage />} 
+            <Route path="/game" element={<GamePage />} />
+            <Route path="/debug-game" element={<GameDebugPage />} />
+                      <Route
+              path="/debug"
+              element={<DebugPage />}
             />
             </Routes>
         </main>
@@ -116,5 +111,4 @@ function App() {
     </Router>
   );
 }
-
 export default App;

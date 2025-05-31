@@ -1,4 +1,336 @@
-import React, { useState, useEffect } from 'react';
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Add Multiplayer Room Features
+Adds player tracking, room-specific chat, and real-time multiplayer to game rooms
+"""
+
+import os
+from datetime import datetime
+
+def update_file_content(file_path, new_content):
+    """Update file with proper Windows encoding"""
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        return True
+    except Exception as e:
+        print(f"Error updating {file_path}: {e}")
+        return False
+
+def main():
+    print("🔧 Adding Multiplayer Room Features...")
+    
+    # 1. Update backend games routes to handle players
+    updated_games_routes = '''import express, { Request, Response } from 'express';
+
+const router = express.Router();
+
+// In-memory storage for games and players
+const gameRooms = new Map<string, {
+  code: string;
+  id: string;
+  status: string;
+  players: Array<{id: string; username: string; socketId?: string; joinedAt: string}>;
+  messages: Array<{id: string; username: string; userId: string; text: string; timestamp: string}>;
+  createdAt: string;
+}>();
+
+// Test endpoint to verify API is working
+router.get('/test', (req: Request, res: Response): void => {
+  console.log('🧪 API test endpoint hit!');
+  res.json({ 
+    success: true, 
+    message: 'Games API is working!',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Get game info by code
+router.get('/:gameCode', (req: Request, res: Response): void => {
+  try {
+    const { gameCode } = req.params;
+    console.log(`🔍 GET /api/games/${gameCode} - Getting game info...`);
+    
+    if (!gameCode) {
+      res.status(400).json({ 
+        success: false,
+        error: 'Game code is required' 
+      });
+      return;
+    }
+    
+    const gameRoom = gameRooms.get(gameCode.toUpperCase());
+    
+    if (gameRoom) {
+      const response = { 
+        success: true, 
+        game: {
+          code: gameRoom.code,
+          id: gameRoom.id,
+          status: gameRoom.status,
+          playerCount: gameRoom.players.length,
+          players: gameRoom.players.map(p => ({
+            id: p.id,
+            username: p.username,
+            joinedAt: p.joinedAt
+          })),
+          messages: gameRoom.messages.slice(-20) // Last 20 messages
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('📤 Sending game info:', response);
+      res.json(response);
+    } else {
+      res.status(404).json({ 
+        success: false,
+        error: 'Game not found' 
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in /api/games/:gameCode:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to get game info',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Create a new game
+router.post('/create', (req: Request, res: Response): void => {
+  try {
+    console.log('🎮 POST /api/games/create - Creating new game...');
+    console.log('📦 Request body:', req.body);
+    
+    const { userId, username } = req.body;
+    
+    // Generate simple 6-character game code
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let gameCode = '';
+    for (let i = 0; i < 6; i++) {
+      gameCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    
+    // Create the game room
+    const gameRoom = {
+      code: gameCode,
+      id: `game_${gameCode.toLowerCase()}_${Date.now()}`,
+      status: 'waiting',
+      players: [],
+      messages: [],
+      createdAt: new Date().toISOString()
+    };
+    
+    // Add creator as first player if provided
+    if (username) {
+      gameRoom.players.push({
+        id: userId || `user_${Date.now()}`,
+        username: username,
+        joinedAt: new Date().toISOString()
+      });
+    }
+    
+    gameRooms.set(gameCode, gameRoom);
+    
+    console.log(`✅ Created game room: ${gameCode} with ${gameRoom.players.length} initial players`);
+    
+    const response = { 
+      success: true, 
+      gameCode: gameCode,
+      message: 'Game created successfully!',
+      game: {
+        code: gameCode,
+        id: gameRoom.id,
+        status: gameRoom.status,
+        playerCount: gameRoom.players.length
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('📤 Sending response:', response);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ Error in /api/games/create:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to create game',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Join an existing game
+router.post('/join', (req: Request, res: Response): void => {
+  try {
+    const { gameCode, userId, username } = req.body;
+    console.log(`🚪 POST /api/games/join - User ${username} joining game: ${gameCode}`);
+    
+    if (!gameCode) {
+      res.status(400).json({ 
+        success: false,
+        error: 'Game code is required' 
+      });
+      return;
+    }
+    
+    const gameRoom = gameRooms.get(gameCode.toUpperCase());
+    
+    if (!gameRoom) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Game not found' 
+      });
+      return;
+    }
+    
+    // Add player to game if not already in it
+    if (username && !gameRoom.players.find(p => p.username === username)) {
+      gameRoom.players.push({
+        id: userId || `user_${Date.now()}`,
+        username: username,
+        joinedAt: new Date().toISOString()
+      });
+      
+      console.log(`✅ Added player ${username} to game ${gameCode}. Total players: ${gameRoom.players.length}`);
+    }
+    
+    const response = { 
+      success: true, 
+      gameCode: gameCode.toUpperCase(),
+      message: 'Joined game successfully!',
+      game: {
+        code: gameRoom.code,
+        id: gameRoom.id,
+        status: gameRoom.status,
+        playerCount: gameRoom.players.length
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log('📤 Sending response:', response);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('❌ Error in /api/games/join:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to join game',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Export gameRooms for use in socket handlers
+export { gameRooms };
+export default router;
+'''
+
+    # 2. Update backend index.ts to add room-specific socket handlers
+    backend_index_additions = '''
+// Add these room-specific socket handlers after the existing socket handlers
+
+// Room-specific socket handlers
+socket.on('join-game-room', (gameCode: string) => {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    socket.emit('error', { message: 'Not authenticated' });
+    return;
+  }
+  
+  console.log(`🎮 User ${user.username} joining game room: ${gameCode}`);
+  
+  // Leave any previous game rooms
+  const rooms = Array.from(socket.rooms);
+  rooms.forEach(room => {
+    if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+      socket.leave(room);
+      console.log(`📤 User ${user.username} left room: ${room}`);
+    }
+  });
+  
+  // Join the new game room
+  socket.join(gameCode);
+  
+  // Import gameRooms from routes
+  const { gameRooms } = require('./routes/games');
+  const gameRoom = gameRooms.get(gameCode);
+  
+  if (gameRoom) {
+    // Update player socket ID in game room
+    const player = gameRoom.players.find((p: any) => p.username === user.username);
+    if (player) {
+      player.socketId = socket.id;
+    }
+    
+    // Notify others in the room
+    socket.to(gameCode).emit('player-joined-room', {
+      player: { username: user.username, id: user.id },
+      message: `${user.username} joined the game`,
+      playerCount: gameRoom.players.length
+    });
+    
+    // Send current room state to the joining player
+    socket.emit('room-state', {
+      gameCode: gameCode,
+      players: gameRoom.players.map((p: any) => ({
+        id: p.id,
+        username: p.username,
+        joinedAt: p.joinedAt
+      })),
+      messages: gameRoom.messages.slice(-20)
+    });
+    
+    console.log(`✅ User ${user.username} joined game room ${gameCode}`);
+  } else {
+    socket.emit('error', { message: 'Game room not found' });
+  }
+});
+
+socket.on('send-room-message', (data: { gameCode: string; message: string }) => {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    socket.emit('error', { message: 'Not authenticated' });
+    return;
+  }
+  
+  const { gameCode, message } = data;
+  console.log(`💬 Room message from ${user.username} in ${gameCode}: ${message}`);
+  
+  const { gameRooms } = require('./routes/games');
+  const gameRoom = gameRooms.get(gameCode);
+  
+  if (gameRoom) {
+    const roomMessage = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      username: user.username,
+      userId: user.id,
+      text: message,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Add to room messages
+    gameRoom.messages.push(roomMessage);
+    
+    // Keep only last 50 messages
+    if (gameRoom.messages.length > 50) {
+      gameRoom.messages = gameRoom.messages.slice(-50);
+    }
+    
+    // Broadcast to all users in the room
+    io.to(gameCode).emit('new-room-message', roomMessage);
+  } else {
+    socket.emit('error', { message: 'Game room not found' });
+  }
+});
+'''
+
+    # 3. Create updated RoomPage with multiplayer features
+    multiplayer_room_page = '''import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { socketService } from '../services/socketService';
 
@@ -382,3 +714,65 @@ const RoomPage: React.FC = () => {
 };
 
 export default RoomPage;
+'''
+
+    # Update files
+    success_count = 0
+    
+    if update_file_content('backend/src/routes/games.ts', updated_games_routes):
+        print("✅ Updated backend games routes with player tracking")
+        success_count += 1
+    
+    if update_file_content('frontend/src/pages/RoomPage.tsx', multiplayer_room_page):
+        print("✅ Updated RoomPage with multiplayer features")
+        success_count += 1
+    
+    # Instructions for manually updating backend index.ts
+    print(f"\n🔧 Manual Step Required:")
+    print(f"Please add these socket handlers to your backend/src/index.ts file:")
+    print(f"Add this code right after the existing 'send-message' socket handler:")
+    print(f"\n{backend_index_additions}")
+    
+    # Update changelog
+    try:
+        changelog_path = 'CHANGELOG.md'
+        with open(changelog_path, 'r', encoding='utf-8') as f:
+            changelog = f.read()
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
+        new_entry = f'- Multiplayer Room Features: Added player tracking, room chat, and real-time multiplayer ({timestamp})'
+        
+        if '### Python Scripts Run' in changelog:
+            updated_changelog = changelog.replace(
+                '### Python Scripts Run',
+                f'### Python Scripts Run\n{new_entry}'
+            )
+            
+            with open(changelog_path, 'w', encoding='utf-8') as f:
+                f.write(updated_changelog)
+            print("✅ Updated CHANGELOG.md")
+            success_count += 1
+    except Exception as e:
+        print(f"Note: Could not update changelog: {e}")
+    
+    print(f"\n🎉 Multiplayer Room Features Added!")
+    print(f"✅ {success_count} files updated successfully")
+    print("\n🔧 What was added:")
+    print("• Player tracking and storage in game rooms")
+    print("• Real-time player list in room page")
+    print("• Room-specific chat (separate from global chat)")
+    print("• Socket integration for live updates")
+    print("• Join game API that adds players to rooms")
+    print("\n⚠️ MANUAL STEP REQUIRED:")
+    print("Please add the socket handlers shown above to backend/src/index.ts")
+    print("Add them after the existing 'send-message' handler")
+    print("\n🎯 Next Steps:")
+    print("1. Add the socket handlers to backend index.ts (manual step)")
+    print("2. Restart both backend and frontend servers")
+    print("3. Create a game in one browser window")
+    print("4. Join the same game code in a second browser window")
+    print("5. You should see both players and be able to chat!")
+    print("\n💡 Test with multiple browser windows/tabs for full multiplayer experience!")
+
+if __name__ == "__main__":
+    main()
