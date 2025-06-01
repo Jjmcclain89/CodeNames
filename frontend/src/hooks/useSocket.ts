@@ -52,7 +52,12 @@ export const useSocket = () => {
   });
 
   useEffect(() => {
-    const socket = socketService.connect();
+    // Don't auto-connect - let App.tsx handle connection
+    const socket = socketService.socket;
+    if (!socket) {
+      console.log('⚠️ useSocket: No socket available, waiting for App.tsx to connect');
+      return;
+    }
     const handlers = handlersRef.current;
 
     // Register event listeners

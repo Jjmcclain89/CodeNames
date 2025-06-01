@@ -28,19 +28,46 @@ export interface ChatMessage {
 class SocketService {
   private _socket: Socket | null = null;
   private token: string | null = null;
+  private isConnecting: boolean = false; // Track connection in progress
 
   get socket(): Socket | null {
     return this._socket;
   }
 
   connect(): Socket {
+    // Track what is calling connect
+    console.log('🔌 CONNECT() CALLED');
+    console.log('🔌 Call stack:', new Error().stack);
+    console.log('🔌 Current socket state:', {
+      hasSocket: !!this._socket,
+      isConnected: this._socket?.connected,
+      isConnecting: this.isConnecting
+    });
+
     // Make socket service accessible for debugging
     (window as any).socketService = this;
 
+    // Check if already connected
     if (this._socket?.connected) {
-      console.log('📡 Socket already connected');
+      console.log('📡 Socket already connected, reusing existing connection');
       return this._socket;
     }
+
+    // Check if connection is in progress
+    if (this.isConnecting) {
+      console.log('📡 Connection already in progress, waiting...');
+      return this._socket!;
+    }
+
+    // Check if socket exists but is disconnected
+    if (this._socket && !this._socket.connected) {
+      console.log('📡 Reconnecting existing socket');
+      this._socket.connect();
+      return this._socket;
+    }
+
+    console.log('📡 Creating new socket connection');
+    this.isConnecting = true;
 
     const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
     console.log('📡 Connecting to socket server:', socketUrl);
@@ -49,7 +76,7 @@ class SocketService {
       autoConnect: false,
       transports: ['websocket', 'polling'],
       timeout: 5000,
-      forceNew: true,
+      forceNew: false, // Don't force new connections
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000
@@ -66,6 +93,7 @@ class SocketService {
       console.log('📡 Disconnecting socket');
       this._socket.disconnect();
       this._socket = null;
+      this.isConnecting = false; // Reset connection state
     }
   }
 
@@ -160,6 +188,9 @@ class SocketService {
 
     this._socket.on('connect', () => {
       console.log('✅ Connected to server, Socket ID:', this._socket?.id);
+      console.log('🔌 Connect event fired - total event listeners:', this._socket?.listeners('connect').length);
+      this.isConnecting = false; // Connection completed
+      
       // Re-authenticate if we have a token
       if (this.token) {
         console.log('🔐 Re-authenticating after reconnection');
@@ -173,6 +204,7 @@ class SocketService {
 
     this._socket.on('connect_error', (error) => {
       console.error('🚫 Socket connection error:', error);
+      this.isConnecting = false; // Reset on connection error
     });
 
     this._socket.on('reconnect', (attemptNumber) => {
@@ -186,6 +218,10 @@ class SocketService {
 
   get isConnected(): boolean {
     return this._socket?.connected || false;
+  }
+
+  get isConnectionReady(): boolean {
+    return this._socket?.connected && !this.isConnecting;
   }
 
   get socketId(): string | undefined {

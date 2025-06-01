@@ -11,9 +11,17 @@ const GamePage: React.FC = () => {
   const [currentPlayer, setCurrentPlayer] = useState<GamePlayer | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is authenticated
+    initializeGame();
+    return () => {
+      gameService.removeAllGameListeners();
+    };
+  }, [navigate]);
+
+  const initializeGame = async () => {
+    // Check authentication
     const token = localStorage.getItem('token');
     const user = localStorage.getItem('user');
     
@@ -22,81 +30,71 @@ const GamePage: React.FC = () => {
       return;
     }
 
-    // Initialize socket connection
-    initializeSocket(token, JSON.parse(user));
-
-    // Cleanup on unmount
-    return () => {
-      gameService.removeAllGameListeners();
-    };
-  }, [navigate]);
-
-  const initializeSocket = (token: string, user: any) => {
-    if (!socketService.isConnected) {
-      socketService.connect();
-    }
-
-    // Set up socket event listeners
-    socketService.onConnect(() => {
-      // Make socket accessible for debugging
-      (window as any).gamePageSocket = socketService.socket;
-      console.log('🔗 Socket assigned to window.gamePageSocket');
-      console.log('🔌 Connected to server');
-      socketService.authenticate(token);
-    });
-
-    socketService.onAuthenticated((data) => {
-        console.log('🔌 Socket connection debug info:');
-        console.log('  - Socket service:', socketService);
-        console.log('  - Socket object:', socketService.socket);
-        console.log('  - Socket connected:', socketService.socket?.connected);
-        console.log('  - Window assignment:', (window as any).socketService);
-
-      if (data.success) {
-        console.log('✅ Authenticated successfully');
-        setIsConnected(true);        
-        // Auto-join or create game for current room
-        setTimeout(() => {
-          // gameService.createGame(); // Commented out to prevent loops // This will join existing or create new
-        }, 500);
-        setError(null);
-        
-        // Create or join game automatically
-        // gameService.createGame(); // Commented out to prevent loops
-      } else {
-        console.error('❌ Authentication failed:', data.error);
-        setError('Authentication failed');
-        navigate('/login');
+    const userData = JSON.parse(user);
+    
+    try {
+      // Initialize socket if not connected
+      if (!socketService.isConnected) {
+        socketService.connect();
       }
-    });
 
-    socketService.onDisconnect(() => {
-      console.log('❌ Disconnected from server');
-      setIsConnected(false);
-      setError('Disconnected from server');
-    });
+      // Set up connection handlers
+      socketService.onConnect(() => {
+        console.log('🔌 Connected to server');
+        setIsConnected(true);
+        socketService.authenticate(token);
+      });
 
-    // Set up game event listeners
-    // Remove existing listeners first to prevent duplicates
-        gameService.removeAllGameListeners();
-        
-        setupGameListeners(user);
+      socketService.onAuthenticated((data) => {
+        if (data.success) {
+          console.log('✅ Authenticated successfully');
+          setupGameListeners(userData);
+          
+          // Try to get existing game state or create new one
+          initializeGameState();
+          setError(null);
+        } else {
+          console.error('❌ Authentication failed:', data.error);
+          setError('Authentication failed');
+          navigate('/login');
+        }
+      });
+
+      socketService.onDisconnect(() => {
+        console.log('❌ Disconnected from server');
+        setIsConnected(false);
+        setError('Disconnected from server');
+      });
+
+      // If already connected, authenticate immediately
+      if (socketService.isConnected) {
+        socketService.authenticate(token);
+      }
+
+    } catch (err) {
+      console.error('Error initializing game:', err);
+      setError('Failed to initialize game');
+      setIsLoading(false);
+    }
   };
 
   const setupGameListeners = (user: any) => {
+    // Remove existing listeners first
+    gameService.removeAllGameListeners();
+    
     gameService.onGameStateUpdated((game: CodenamesGame) => {
       console.log('🎮 Game state updated:', game);
       setGameState(game);
+      setIsLoading(false);
       
       // Find current player in the game
-      const player = game.players.find(p => p.id === user.id);
+      const player = game.players.find(p => p.id === user.id || p.username === user.username);
       setCurrentPlayer(player || null);
     });
 
     gameService.onGameError((error: string) => {
       console.error('🎮 Game error:', error);
       setError(error);
-      // Clear error after 5 seconds
       setTimeout(() => setError(null), 5000);
     });
 
@@ -111,34 +109,24 @@ const GamePage: React.FC = () => {
     gameService.onGameEnded((winner) => {
       console.log('🎉 Game ended! Winner:', winner);
     });
-  
-    
-    // Test players response
-    socketService.socket?.on('game:test-players-added', (data) => {
-      console.log('🎉 Test players added:', data);
-      alert(`Success! Added ${data.playersAdded} test players`);
-    });
-
-    socketService.socket?.on('test-response', (data) => {
-      console.log('🧪 Backend test response:', data);
-      alert(`Backend responded: ${data.message}`);
-    });};
-
-  
-  // Testing/Debug methods
-  const handleTestMode = () => {
-    // Automatically assign current user to blue operative
-    handleJoinTeam('blue', 'operative');
-    
-    // Add test players via socket
-    setTimeout(() => {
-      socketService.socket?.emit('game:add-test-players');
-    }, 100);
   };
 
-  const handleForceStart = () => {
-    // Force start game even without full teams
-    gameService.startGame();
+  const initializeGameState = () => {
+    console.log('🎯 Initializing game state...');
+    
+    // Try to join existing game or create new one
+    setTimeout(() => {
+      // First try to request current game state
+      socketService.socket?.emit('game:request-state');
+      
+      // If no response in 2 seconds, create a new game
+      setTimeout(() => {
+        if (!gameState) {
+          console.log('🎮 No existing game found, creating new game...');
+          gameService.createGame();
+        }
+      }, 2000);
+    }, 500);
   };
 
   const handleCardClick = (cardId: string) => {
@@ -157,37 +145,91 @@ const GamePage: React.FC = () => {
     gameService.startGame();
   };
 
-    const handleAddTestPlayers = () => {
-    socketService.socket?.emit('game:add-test-players');
-  };
-
   const handleJoinTeam = (team: any, role: any) => {
     gameService.joinTeam(team, role);
   };
 
-  if (!isConnected) {
+  // Loading state
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <h2 className="text-xl font-semibold text-gray-700">Connecting to game...</h2>
+          <p className="text-gray-600 mt-2">Setting up your Codenames experience</p>
           {error && (
             <p className="text-red-600 mt-2">{error}</p>
           )}
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => navigate('/')}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            >
+              Back to Home
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 ml-2"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!gameState) {
+  // Not connected state
+  if (!isConnected) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
-          <div className="animate-pulse rounded-full h-32 w-32 bg-blue-200 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-700">Loading game...</h2>
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-gray-700">Connection Lost</h2>
+          <p className="text-gray-600 mt-2">Unable to connect to game server</p>
           {error && (
             <p className="text-red-600 mt-2">{error}</p>
           )}
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 ml-2"
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No game state - show setup
+  if (!gameState) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
+          <h2 className="text-2xl font-semibold text-gray-700 mb-4">🎮 Ready to Play?</h2>
+          <p className="text-gray-600 mb-6">No active game found. Create a new game to start playing!</p>
+          <div className="space-y-3">
+            <button
+              onClick={() => gameService.createGame()}
+              className="w-full bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600"
+            >
+              🎯 Create New Game
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600"
+            >
+              🏠 Back to Home
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -203,7 +245,7 @@ const GamePage: React.FC = () => {
             className="absolute top-0 bottom-0 right-0 px-4 py-3"
             onClick={() => setError(null)}
           >
-            <span className="text-xl">&times;</span>
+            <span className="text-xl">×</span>
           </button>
         </div>
       )}

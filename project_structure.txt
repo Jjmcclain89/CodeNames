@@ -1,29 +1,35 @@
-CODENAMES PROJECT STRUCTURE (Clean)
-==================================================
-.gitignore (514B)
-CHANGELOG.md (10KB)
+=== CODENAMES PROJECT STRUCTURE ===
+Generated: 2025-05-31 21:29:53
+Root: C:\Users\Jmccl\Coding Projects\CodeNames
+
+Structure:
+
+.dockerignore (175B)
+CHANGELOG.md (15KB)
 DEVELOPMENT_PLAN.md (10KB)
 README.md (9KB)
-SESSION_SUMMARIES.md (7KB)
+SESSION_SUMMARIES.md (13KB)
 SESSION_WORKFLOW.md (5KB)
 backend/
-  .env.example (377B)
   package-lock.json (255KB)
   package.json (1KB)
   prisma/
     init.sql/
     schema.prisma (2KB)
   src/
-    index.ts (17KB)
+    index.ts (25KB)
+    index.ts.broken_145450 (27KB)
     middleware/
+      auth.ts (768B)
     models/
       Game.ts (8KB)
     routes/
       auth.ts (3KB)
+      games.ts (6KB)
       rooms.ts (1KB)
     server.ts (2KB)
     services/
-      gameService.ts (6KB)
+      gameService.ts (8KB)
     socket/
       socketHandlers.ts (5KB)
     types/
@@ -33,7 +39,6 @@ backend/
 docker-compose.alt.yml (654B)
 docker-compose.yml (686B)
 frontend/
-  .env.example (136B)
   index.html (371B)
   package-lock.json (232KB)
   package.json (1KB)
@@ -44,10 +49,15 @@ frontend/
     App.tsx (3KB)
     components/
       Chat/
+        ChatRoom.tsx (7KB)
       Game/
+        GamePage.tsx (367B)
       GameBoard/
+        Card.tsx (3KB)
+        GameBoard.tsx (18KB)
       Room/
       UI/
+        HomePage.tsx (496B)
     constants/
     context/
       GameContext.tsx (792B)
@@ -58,16 +68,16 @@ frontend/
     pages/
       DebugPage.tsx (5KB)
       GameDebugPage.tsx (8KB)
-      GamePage.tsx (7KB)
-      GamePage.tsx.backup_20250530_223829 (5KB)
-      HomePage.tsx (4KB)
+      GamePage.tsx (8KB)
+      HomePage.tsx (23KB)
+      HomePage.tsx.broken (23KB)
       LoginPage.tsx (3KB)
-      RoomPage.tsx (6KB)
+      RoomPage.tsx (24KB)
       SimpleGamePage.tsx (856B)
     services/
       authService.ts (3KB)
       gameService.ts (4KB)
-      socketService.ts (4KB)
+      socketService.ts (6KB)
     types/
       game.ts (1KB)
     utils/
@@ -77,62 +87,38 @@ frontend/
   vite.config.ts (460B)
 project_structure.txt (3KB)
 python/
-  add_debug_route.py (2KB)
-  auth_keys_fix.py (6KB)
-  auto_debug_route_setup.py (16KB)
-  auto_phase2_integration.py (21KB)
-  check_backend_handlers.py (10KB)
-  check_port_conflicts.py (9KB)
-  clean_gameboard_jsx.py (18KB)
-  complete_phase0.py (13KB)
-  complete_phase1_communication.py (30KB)
-  create_changelog_script.py (2KB)
-  diagnose_backend_issue.py (13KB)
-  direct_debug_fix.py (5KB)
-  directory_mapper.py (4KB)
-  directory_mapper_fixed.py (4KB)
-  directory_mapper_phase2.py (8KB)
-  emergency_jsx_fix.py (6KB)
-  file_collector.py (6KB)
-  fix_authentication_flow.py (9KB)
-  fix_backend_routes.py (12KB)
-  fix_database_connection.py (9KB)
-  fix_debug_page_styling.py (9KB)
-  fix_game_integration_testing.py (16KB)
-  fix_jsx_error.py (12KB)
-  fix_login_input.py (4KB)
-  fix_page_styling.py (16KB)
-  fix_prisma_connection.py (10KB)
-  fix_session_workflow.py (12KB)
-  fix_socket_auth_errors.py (14KB)
-  fix_socket_connection.py (10KB)
-  fix_test_players_button.py (7KB)
-  fix_typescript_errors.py (9KB)
-  game_connection_debug.py (11KB)
-  game_model_fix.py (8KB)
-  game_route_debug.py (8KB)
-  jsx_structure_fix.py (8KB)
-  phase1_debug_fix.py (19KB)
-  phase1_file_collector.py (7KB)
-  phase1_files_collected.txt (22KB)
-  phase1_socket_foundation.py (43KB)
-  phase1_socket_foundation_windows.py (44KB)
-  phase2_assessment.py (9KB)
-  phase2_integrated_setup.py (50KB)
-  phase2_integration.py (23KB)
-  phase2_typescript_fix.py (10KB)
-  precise_app_fix.py (5KB)
-  quick_testing_fix.py (7KB)
-  react_debug_page.py (10KB)
-  session_summary_script.py (4KB)
-  setup_project.py (26KB)
-  stop_infinite_loops.py (10KB)
-  update_session_docs.py (16KB)
-  update_session_workflow.py (12KB)
+  add-games-list-homepage.py (21KB)
+  add-multiplayer-room-features.py (25KB)
+  add-socket-handlers-automatically.py (8KB)
+  add_connection_call_tracking.py (4KB)
+  add_debug_logging.py (5KB)
+  add_socket_debug_tools.py (8KB)
+  clean-homepage-layout.py (20KB)
+  directory_mapper.py (3KB)
+  emergency_backend_fix.py (24KB)
+  fix-backend-syntax.py (19KB)
+  fix-frontend-proxy.py (14KB)
+  fix-gameservice.py (23KB)
+  fix-homepage-games-list.py (23KB)
+  fix-json-error.py (17KB)
+  fix-return-statements.py (4KB)
+  fix-room-page-connection.py (20KB)
+  fix-typescript-games-routes.py (4KB)
+  fix-typescript-types.py (8KB)
+  fix-typescript-undefined-error.py (9KB)
+  fix_backend_types.py (4KB)
+  fix_duplicate_state.py (2KB)
+  fix_import_syntax.py (5KB)
+  fix_multiplayer_team_assignment.py (29KB)
+  fix_multiple_connections.py (6KB)
+  fix_socket_service.py (7KB)
+  fix_team_assignment.py (5KB)
+  implement_team_assignment.py (32KB)
+  register-games-routes.py (6KB)
+  replace_clean_homepage.py (24KB)
+  session_summary_script.py (5KB)
+  simple-typescript-fix.py (9KB)
 shared/
   types/
     game.ts (6KB)
     index.ts (1KB)
-
-==================================================
-Total items: 133

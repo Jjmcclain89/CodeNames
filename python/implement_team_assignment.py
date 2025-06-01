@@ -1,4 +1,17 @@
-import React, { useState, useEffect } from 'react';
+#!/usr/bin/env python3
+import os
+import json
+from datetime import datetime
+
+def implement_team_assignment():
+    """
+    Implement team assignment flow and fix game state loading issues.
+    Focus on connecting room page to actual Codenames game mechanics.
+    """
+    print("🎯 Implementing Team Assignment & Game Flow...")
+    
+    # 1. Update RoomPage to include game start button and team assignment
+    room_page_content = '''import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { socketService } from '../services/socketService';
 import { gameService } from '../services/gameService';
@@ -31,7 +44,6 @@ interface GameInfo {
 const RoomPage: React.FC = () => {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
-  const [connectionInitiated, setConnectionInitiated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
@@ -41,33 +53,12 @@ const RoomPage: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [gameStarted, setGameStarted] = useState(false);
-  const [gameState, setGameState] = useState<any>(null);
 
   useEffect(() => {
-    if (!roomCode || connectionInitiated) {
-      console.log('🔍 Skipping connection - already initiated or no room code');
-      return;
-    }
-    
-    console.log('🔌 Starting connection process for room:', roomCode);
-    setConnectionInitiated(true);
-    
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setCurrentUser(user);
     loadGameAndConnect();
-    
-    // Cleanup on unmount
-    return () => {
-      console.log('🧹 Cleaning up connections');
-      gameService.removeAllGameListeners();
-      if (socketService.socket) {
-        socketService.socket.off('player-joined-room');
-        socketService.socket.off('room-state');
-        socketService.socket.off('new-room-message');
-      }
-      setConnectionInitiated(false);
-    };
-  }, [roomCode]); // Only depend on roomCode
+  }, [roomCode]);
 
   const loadGameAndConnect = async () => {
     if (!roomCode) {
@@ -115,8 +106,7 @@ const RoomPage: React.FC = () => {
           setPlayers(data.game.players || []);
           setMessages(data.game.messages || []);
           
-          // Connect to socket and set up game
-          await connectToRoom(roomCode, token, user);
+          connectToRoom(roomCode, token);
           console.log('✅ Game info loaded:', data.game);
         } else {
           throw new Error(data.error || 'Game not found');
@@ -134,116 +124,60 @@ const RoomPage: React.FC = () => {
     setIsLoading(false);
   };
 
-  const connectToRoom = async (gameCode: string, token: string, user: any) => {
+  const connectToRoom = (gameCode: string, token: string) => {
     console.log('🔌 Connecting to room socket...', gameCode);
     
-    // Check if already connected to this room
-    if (isConnected && socketService.socket?.connected) {
-      console.log('🔍 Already connected to socket, skipping connection');
-      return Promise.resolve();
+    if (!socketService.socket?.connected) {
+      socketService.connect();
+      socketService.authenticate(token);
     }
-    
-    return new Promise<void>((resolve) => {
-      // Use existing socket connection from App.tsx - DON'T create new one
-      if (!socketService.socket?.connected) {
-        console.log('❌ No socket connection available - App.tsx should have created it');
-        return;
-      } else {
-        console.log('✅ Using existing socket connection from App.tsx');
-      }
 
-      const handleAuth = () => {
-        console.log('✅ Socket authenticated, joining room:', gameCode);
-        socketService.socket?.emit('join-game-room', gameCode);
-        setIsConnected(true);
-        
-        // Set up game listeners after socket is ready
-        setupGameListeners(user);
-        
-        // Create or join game in the backend (only once per connection)
-        console.log('🎮 Creating/joining game for room:', gameCode);
-        if (!gameState) {
-          console.log('🎮 No existing game state, creating/joining game');
-          gameService.createGame(); // This will create or join existing game
-        } else {
-          console.log('🎮 Game state already exists, skipping creation');
+    const handleAuth = () => {
+      console.log('✅ Socket authenticated, joining room:', gameCode);
+      socketService.socket?.emit('join-game-room', gameCode);
+      setIsConnected(true);
+    };
+
+    if (socketService.socket?.connected) {
+      handleAuth();
+    } else {
+      socketService.socket?.on('authenticated', handleAuth);
+    }
+
+    // Listen for room events
+    socketService.socket?.on('player-joined-room', (data: any) => {
+      console.log('👥 Player joined room:', data);
+      setPlayers(prev => {
+        if (!prev.find(p => p.username === data.player.username)) {
+          return [...prev, {
+            id: data.player.id,
+            username: data.player.username,
+            joinedAt: new Date().toISOString()
+          }];
         }
-        
-        resolve();
-      };
-
-      if (socketService.socket?.connected) {
-        socketService.authenticate(token);
-        socketService.onAuthenticated((data: any) => {
-          if (data.success) {
-            handleAuth();
-          }
-        });
-      } else {
-        socketService.onConnect(() => {
-          socketService.authenticate(token);
-          socketService.onAuthenticated((data: any) => {
-            if (data.success) {
-              handleAuth();
-            }
-          });
-        });
-      }
-
-      // Listen for room events
-      socketService.socket?.on('player-joined-room', (data: any) => {
-        console.log('👥 Player joined room:', data);
-        setPlayers(prev => {
-          if (!prev.find(p => p.username === data.player.username)) {
-            return [...prev, {
-              id: data.player.id,
-              username: data.player.username,
-              joinedAt: new Date().toISOString()
-            }];
-          }
-          return prev;
-        });
-      });
-
-      socketService.socket?.on('room-state', (data: any) => {
-        console.log('🎯 Room state received:', data);
-        setPlayers(data.players || []);
-        setMessages(data.messages || []);
-      });
-
-      socketService.socket?.on('new-room-message', (message: RoomMessage) => {
-        console.log('💬 New room message:', message);
-        setMessages(prev => [...prev, message]);
+        return prev;
       });
     });
-  };
 
-  const setupGameListeners = (user: any) => {
-    console.log('🎮 Setting up game listeners for:', user.username);
-    
-    // Remove existing listeners first
-    gameService.removeAllGameListeners();
-    
-    // Listen for game state updates
-    gameService.onGameStateUpdated((newGameState: any) => {
-      console.log('🎮 Game state updated in room:', newGameState);
-      setGameState(newGameState);
-      
-      if (newGameState.status === 'playing') {
+    socketService.socket?.on('room-state', (data: any) => {
+      console.log('🎯 Room state received:', data);
+      setPlayers(data.players || []);
+      setMessages(data.messages || []);
+    });
+
+    socketService.socket?.on('new-room-message', (message: RoomMessage) => {
+      console.log('💬 New room message:', message);
+      setMessages(prev => [...prev, message]);
+    });
+
+    // Listen for game events
+    gameService.onGameStateUpdated((gameState: any) => {
+      console.log('🎮 Game state updated in room:', gameState);
+      if (gameState.status === 'playing') {
         setGameStarted(true);
       }
-      
-      // Update players with team/role info from game state
-      if (newGameState.players) {
-        console.log('👥 Updating players from game state:', newGameState.players);
-        setPlayers(newGameState.players);
-      }
-    });
-
-    gameService.onGameError((error: string) => {
-      console.error('🎮 Game error:', error);
-      setError(error);
-      setTimeout(() => setError(''), 3000);
+      // Update players with team/role info
+      setPlayers(gameState.players || []);
     });
   };
 
@@ -267,27 +201,12 @@ const RoomPage: React.FC = () => {
   };
 
   const handleJoinTeam = (team: string, role: string) => {
-    console.log(`👥 Attempting to join ${team} team as ${role}`);
-    console.log('🔍 Current game state:', gameState);
-    console.log('🔍 Socket connected:', socketService.socket?.connected);
-    console.log('🔍 User:', currentUser);
-    
-    if (!isConnected) {
-      console.error('❌ Socket not connected');
-      setError('Not connected to server');
-      return;
-    }
-    
-    // Use the game service to join team
+    console.log(`👥 Joining ${team} team as ${role}`);
     gameService.joinTeam(team as any, role as any);
   };
 
   const handleStartGame = () => {
     console.log('🚀 Starting Codenames game...');
-    if (!isConnected) {
-      setError('Not connected to server');
-      return;
-    }
     gameService.startGame();
   };
 
@@ -297,29 +216,16 @@ const RoomPage: React.FC = () => {
   };
 
   const canStartGame = () => {
-    if (!gameState || !gameState.players) return false;
-    
-    const redPlayers = gameState.players.filter((p: any) => p.team === 'red');
-    const bluePlayers = gameState.players.filter((p: any) => p.team === 'blue');
-    const redSpymaster = redPlayers.find((p: any) => p.role === 'spymaster');
-    const blueSpymaster = bluePlayers.find((p: any) => p.role === 'spymaster');
+    const redPlayers = players.filter(p => p.team === 'red');
+    const bluePlayers = players.filter(p => p.team === 'blue');
+    const redSpymaster = redPlayers.find(p => p.role === 'spymaster');
+    const blueSpymaster = bluePlayers.find(p => p.role === 'spymaster');
     
     return redSpymaster && blueSpymaster && redPlayers.length >= 2 && bluePlayers.length >= 2;
   };
 
   const getCurrentUserPlayer = () => {
-    if (!gameState || !gameState.players) return null;
-    return gameState.players.find((p: any) => p.username === currentUser?.username);
-  };
-
-  const getTeamPlayers = (team: string) => {
-    if (!gameState || !gameState.players) return [];
-    return gameState.players.filter((p: any) => p.team === team);
-  };
-
-  const hasSpymaster = (team: string) => {
-    const teamPlayers = getTeamPlayers(team);
-    return teamPlayers.some((p: any) => p.role === 'spymaster');
+    return players.find(p => p.username === currentUser?.username);
   };
 
   if (isLoading) {
@@ -408,14 +314,6 @@ const RoomPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Debug Info */}
-        <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded p-3 text-xs">
-          <strong>🔍 Debug:</strong> Connected: {isConnected ? 'Yes' : 'No'} | 
-          Game State: {gameState ? 'Loaded' : 'None'} | 
-          Players in Game: {gameState?.players?.length || 0} | 
-          User: {currentUser?.username}
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Game Setup Area */}
           <div className="lg:col-span-2 space-y-6">
@@ -456,10 +354,10 @@ const RoomPage: React.FC = () => {
                     <div className="space-y-3 mb-4">
                       <button
                         onClick={() => handleJoinTeam('red', 'spymaster')}
-                        className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400"
-                        disabled={hasSpymaster('red')}
+                        className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors"
+                        disabled={players.some(p => p.team === 'red' && p.role === 'spymaster')}
                       >
-                        {hasSpymaster('red') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
+                        {players.some(p => p.team === 'red' && p.role === 'spymaster') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
                       </button>
                       <button
                         onClick={() => handleJoinTeam('red', 'operative')}
@@ -470,10 +368,10 @@ const RoomPage: React.FC = () => {
                     </div>
                     <div className="text-sm text-gray-700">
                       <div className="font-medium mb-2">Team Members:</div>
-                      {getTeamPlayers('red').length === 0 ? (
+                      {players.filter(p => p.team === 'red').length === 0 ? (
                         <p className="text-gray-500 italic">No players yet</p>
                       ) : (
-                        getTeamPlayers('red').map((player: any) => (
+                        players.filter(p => p.team === 'red').map(player => (
                           <div key={player.id} className="flex justify-between items-center py-1">
                             <span>{player.username}</span>
                             <span className="text-red-600 font-medium">
@@ -493,10 +391,10 @@ const RoomPage: React.FC = () => {
                     <div className="space-y-3 mb-4">
                       <button
                         onClick={() => handleJoinTeam('blue', 'spymaster')}
-                        className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400"
-                        disabled={hasSpymaster('blue')}
+                        className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
+                        disabled={players.some(p => p.team === 'blue' && p.role === 'spymaster')}
                       >
-                        {hasSpymaster('blue') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
+                        {players.some(p => p.team === 'blue' && p.role === 'spymaster') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
                       </button>
                       <button
                         onClick={() => handleJoinTeam('blue', 'operative')}
@@ -507,10 +405,10 @@ const RoomPage: React.FC = () => {
                     </div>
                     <div className="text-sm text-gray-700">
                       <div className="font-medium mb-2">Team Members:</div>
-                      {getTeamPlayers('blue').length === 0 ? (
+                      {players.filter(p => p.team === 'blue').length === 0 ? (
                         <p className="text-gray-500 italic">No players yet</p>
                       ) : (
-                        getTeamPlayers('blue').map((player: any) => (
+                        players.filter(p => p.team === 'blue').map(player => (
                           <div key={player.id} className="flex justify-between items-center py-1">
                             <span>{player.username}</span>
                             <span className="text-blue-600 font-medium">
@@ -547,11 +445,11 @@ const RoomPage: React.FC = () => {
             {/* Players List */}
             <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
               <h3 className="font-semibold text-gray-900 mb-4">
-                👥 Players ({gameState?.players?.length || players.length})
+                👥 Players ({players.length})
               </h3>
               <div className="space-y-2">
-                {(gameState?.players || players).length > 0 ? (
-                  (gameState?.players || players).map((player: any) => (
+                {players.length > 0 ? (
+                  players.map((player) => (
                     <div key={player.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                       <div>
                         <div className="font-medium text-gray-900 flex items-center">
@@ -563,7 +461,7 @@ const RoomPage: React.FC = () => {
                           )}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {player.joinedAt ? `Joined ${new Date(player.joinedAt).toLocaleTimeString()}` : 'In game'}
+                          Joined {new Date(player.joinedAt).toLocaleTimeString()}
                         </div>
                       </div>
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -634,4 +532,374 @@ const RoomPage: React.FC = () => {
   );
 };
 
-export default RoomPage;
+export default RoomPage;'''
+
+    # Write the updated RoomPage
+    with open('frontend/src/pages/RoomPage.tsx', 'w', encoding='utf-8') as f:
+        f.write(room_page_content)
+    
+    print("✅ Updated RoomPage with team assignment")
+    
+    # 2. Fix the GamePage to properly initialize with game state
+    game_page_content = '''import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import GameBoard from '../components/GameBoard/GameBoard';
+import { gameService } from '../services/gameService';
+import { socketService } from '../services/socketService';
+import { CodenamesGame, GamePlayer } from '../types/game';
+
+const GamePage: React.FC = () => {
+  const navigate = useNavigate();
+  const [gameState, setGameState] = useState<CodenamesGame | null>(null);
+  const [currentPlayer, setCurrentPlayer] = useState<GamePlayer | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    initializeGame();
+    return () => {
+      gameService.removeAllGameListeners();
+    };
+  }, [navigate]);
+
+  const initializeGame = async () => {
+    // Check authentication
+    const token = localStorage.getItem('token');
+    const user = localStorage.getItem('user');
+    
+    if (!token || !user) {
+      navigate('/login');
+      return;
+    }
+
+    const userData = JSON.parse(user);
+    
+    try {
+      // Initialize socket if not connected
+      if (!socketService.isConnected) {
+        socketService.connect();
+      }
+
+      // Set up connection handlers
+      socketService.onConnect(() => {
+        console.log('🔌 Connected to server');
+        setIsConnected(true);
+        socketService.authenticate(token);
+      });
+
+      socketService.onAuthenticated((data) => {
+        if (data.success) {
+          console.log('✅ Authenticated successfully');
+          setupGameListeners(userData);
+          
+          // Try to get existing game state or create new one
+          initializeGameState();
+          setError(null);
+        } else {
+          console.error('❌ Authentication failed:', data.error);
+          setError('Authentication failed');
+          navigate('/login');
+        }
+      });
+
+      socketService.onDisconnect(() => {
+        console.log('❌ Disconnected from server');
+        setIsConnected(false);
+        setError('Disconnected from server');
+      });
+
+      // If already connected, authenticate immediately
+      if (socketService.isConnected) {
+        socketService.authenticate(token);
+      }
+
+    } catch (err) {
+      console.error('Error initializing game:', err);
+      setError('Failed to initialize game');
+      setIsLoading(false);
+    }
+  };
+
+  const setupGameListeners = (user: any) => {
+    // Remove existing listeners first
+    gameService.removeAllGameListeners();
+    
+    gameService.onGameStateUpdated((game: CodenamesGame) => {
+      console.log('🎮 Game state updated:', game);
+      setGameState(game);
+      setIsLoading(false);
+      
+      // Find current player in the game
+      const player = game.players.find(p => p.id === user.id || p.username === user.username);
+      setCurrentPlayer(player || null);
+    });
+
+    gameService.onGameError((error: string) => {
+      console.error('🎮 Game error:', error);
+      setError(error);
+      setTimeout(() => setError(null), 5000);
+    });
+
+    gameService.onCardRevealed((card) => {
+      console.log('🎯 Card revealed:', card.word, card.team);
+    });
+
+    gameService.onClueGiven((clue) => {
+      console.log('💡 Clue given:', clue.word, clue.number);
+    });
+
+    gameService.onGameEnded((winner) => {
+      console.log('🎉 Game ended! Winner:', winner);
+    });
+  };
+
+  const initializeGameState = () => {
+    console.log('🎯 Initializing game state...');
+    
+    // Try to join existing game or create new one
+    setTimeout(() => {
+      // First try to request current game state
+      socketService.socket?.emit('game:request-state');
+      
+      // If no response in 2 seconds, create a new game
+      setTimeout(() => {
+        if (!gameState) {
+          console.log('🎮 No existing game found, creating new game...');
+          gameService.createGame();
+        }
+      }, 2000);
+    }, 500);
+  };
+
+  const handleCardClick = (cardId: string) => {
+    gameService.revealCard(cardId);
+  };
+
+  const handleGiveClue = (word: string, number: number) => {
+    gameService.giveClue(word, number);
+  };
+
+  const handleEndTurn = () => {
+    gameService.endTurn();
+  };
+
+  const handleStartGame = () => {
+    gameService.startGame();
+  };
+
+  const handleJoinTeam = (team: any, role: any) => {
+    gameService.joinTeam(team, role);
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-700">Connecting to game...</h2>
+          <p className="text-gray-600 mt-2">Setting up your Codenames experience</p>
+          {error && (
+            <p className="text-red-600 mt-2">{error}</p>
+          )}
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => navigate('/')}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            >
+              Back to Home
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 ml-2"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Not connected state
+  if (!isConnected) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <h2 className="text-xl font-semibold text-gray-700">Connection Lost</h2>
+          <p className="text-gray-600 mt-2">Unable to connect to game server</p>
+          {error && (
+            <p className="text-red-600 mt-2">{error}</p>
+          )}
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+            >
+              Try Again
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 ml-2"
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No game state - show setup
+  if (!gameState) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
+          <h2 className="text-2xl font-semibold text-gray-700 mb-4">🎮 Ready to Play?</h2>
+          <p className="text-gray-600 mb-6">No active game found. Create a new game to start playing!</p>
+          <div className="space-y-3">
+            <button
+              onClick={() => gameService.createGame()}
+              className="w-full bg-green-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-600"
+            >
+              🎯 Create New Game
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full bg-blue-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-600"
+            >
+              🏠 Back to Home
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 relative">
+          <span className="block sm:inline">{error}</span>
+          <button
+            className="absolute top-0 bottom-0 right-0 px-4 py-3"
+            onClick={() => setError(null)}
+          >
+            <span className="text-xl">×</span>
+          </button>
+        </div>
+      )}
+
+      {/* Game Board */}
+      <GameBoard
+        gameState={gameState}
+        currentPlayer={currentPlayer}
+        onCardClick={handleCardClick}
+        onGiveClue={handleGiveClue}
+        onEndTurn={handleEndTurn}
+        onStartGame={handleStartGame}
+        onJoinTeam={handleJoinTeam}
+      />
+    </div>
+  );
+};
+
+export default GamePage;'''
+
+    with open('frontend/src/pages/GamePage.tsx', 'w', encoding='utf-8') as f:
+        f.write(game_page_content)
+    
+    print("✅ Updated GamePage with better state loading")
+    
+    # 3. Add a socket handler for requesting game state
+    backend_socket_addition = '''
+  
+  // Add handler for requesting current game state
+  socket.on('game:request-state', () => {
+    if (!socket.userId) {
+      socket.emit('game:error', 'Not authenticated');
+      return;
+    }
+
+    console.log('🔍 Game state requested by:', socket.username);
+    
+    // Try to find existing game for user
+    const game = gameService.getGameByPlayer(socket.userId);
+    if (game) {
+      const gameState = game.getGame();
+      socket.emit('game:state-updated', gameState);
+      console.log('📤 Sent existing game state to:', socket.username);
+    } else {
+      console.log('❌ No existing game found for:', socket.username);
+      socket.emit('game:error', 'No active game found');
+    }
+  });'''
+
+    # Read current backend index.ts
+    with open('backend/src/index.ts', 'r', encoding='utf-8') as f:
+        backend_content = f.read()
+    
+    # Add the new handler before the disconnect handler
+    if 'game:request-state' not in backend_content:
+        backend_content = backend_content.replace(
+            '  socket.on(\'disconnect\', () => {',
+            backend_socket_addition + '\n\n  socket.on(\'disconnect\', () => {'
+        )
+        
+        with open('backend/src/index.ts', 'w', encoding='utf-8') as f:
+            f.write(backend_content)
+        
+        print("✅ Added game state request handler to backend")
+    
+    # 4. Update CHANGELOG
+    update_changelog()
+    
+    print("\n🎉 TEAM ASSIGNMENT IMPLEMENTATION COMPLETE!")
+    print("\n📋 What was implemented:")
+    print("  ✅ Enhanced RoomPage with full team assignment UI")
+    print("  ✅ Team selection (Red/Blue) with role selection (Spymaster/Operative)")
+    print("  ✅ Game start validation (requires both teams with proper setup)")
+    print("  ✅ Improved GamePage with better state loading and error handling")
+    print("  ✅ Added game state request handler to backend")
+    print("  ✅ Seamless flow from room setup to actual game")
+    
+    print("\n🚀 NEXT STEPS:")
+    print("  1. Test the new team assignment flow")
+    print("  2. Create a game, join teams, and start the game")
+    print("  3. Verify the game board loads properly")
+    print("  4. Test actual Codenames gameplay mechanics")
+
+def update_changelog():
+    """Update the CHANGELOG.md with this session's changes"""
+    try:
+        with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Find the "### Python Scripts Run" section and add our entry
+        new_entry = f"- Team Assignment Implementation: Enhanced room page with full team selection, role assignment, and game start validation (2025-05-31 {datetime.now().strftime('%H:%M')})"
+        
+        if "### Python Scripts Run" in content:
+            content = content.replace(
+                "### Python Scripts Run\n",
+                f"### Python Scripts Run\n{new_entry}\n"
+            )
+        else:
+            # Add the section if it doesn't exist
+            content = content.replace(
+                "## [Unreleased]\n",
+                f"## [Unreleased]\n\n### Python Scripts Run\n{new_entry}\n"
+            )
+        
+        with open('CHANGELOG.md', 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print("✅ Updated CHANGELOG.md")
+        
+    except Exception as e:
+        print(f"⚠️  Could not update CHANGELOG.md: {e}")
+
+if __name__ == "__main__":
+    implement_team_assignment()

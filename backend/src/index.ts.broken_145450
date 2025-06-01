@@ -30,7 +30,6 @@ console.log('📦 Express middleware configured');
 const users = new Map<string, any>();
 const rooms = new Map<string, any>();
 const connectedUsers = new Map<string, any>();
-const userRooms = new Map<string, string>(); // Track which room each user is in
 
 // Debug function to log users
 function logUsers() {
@@ -187,27 +186,18 @@ import { GameService } from './services/gameService';
 function addGameHandlers(socket: any, io: any) {
   const user = connectedUsers.get(socket.id);
   if (!user) {
+    // safe_print('⚠️ Game handler called for unauthenticated socket:', socket.id);
     return;
   }
 
   // Game creation and management
   socket.on('game:create', () => {
     try {
-      // Get user's current room instead of hardcoded GLOBAL
-      const currentRoom = userRooms.get(socket.id);
-      if (!currentRoom) {
-        socket.emit('game:error', 'Not in a game room');
-        return;
-      }
-      const roomCode = currentRoom; // For now, use global room for games
+      const roomCode = 'GLOBAL'; // For now, use global room for games
       const game = gameService.createGameForRoom(roomCode);
       
       // Add player to game
-      console.log('🎮 Adding player to game:');
-      console.log('🎮 Game ID:', game.getId());
-      console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
       const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
-      console.log('🎮 Add player result:', success);
       
       if (success) {
         const gameState = game.getGame();
@@ -246,13 +236,7 @@ function addGameHandlers(socket: any, io: any) {
   socket.on('game:join-team', (team: string, role: string) => {
     try {
       // Get or create game for current room
-      // Get user's current room instead of hardcoded GLOBAL
-      const currentRoom = userRooms.get(socket.id);
-      if (!currentRoom) {
-        socket.emit('game:error', 'Not in a game room');
-        return;
-      }
-      const roomCode = currentRoom;
+      const roomCode = 'GLOBAL';
       let game = gameService.getGameForRoom(roomCode);
       
       if (!game) {
@@ -260,23 +244,7 @@ function addGameHandlers(socket: any, io: any) {
         gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
       }
 
-      console.log('🎮 BEFORE team assignment:');
-      console.log('🎮 User:', user.username, 'ID:', user.id);
-      console.log('🎮 Attempting to join team:', team, 'as', role);
-      console.log('🎮 Current room:', currentRoom);
-      
-      // Check if player exists in game before assignment
-      const existingGame = gameService.getGameByPlayer(user.id);
-      console.log('🎮 Player exists in game:', !!existingGame);
-      if (existingGame) {
-        const existingState = existingGame.getGame();
-        console.log('🎮 Existing game players:', existingState.players.map(p => `${p.username}(${p.team}/${p.role})`));
-      }
-      
       const result = gameService.assignPlayerToTeam(user.id, team as any, role as any);
-      
-      console.log('🎮 AFTER team assignment:');
-      console.log('🎮 Assignment result:', result);
       
       if (result.success) {
         const gameState = game.getGame();
@@ -362,6 +330,31 @@ function addGameHandlers(socket: any, io: any) {
     }
   });
 
+  socket.on('game:request-state', () => {
+    try {
+      if (!user) {
+        socket.emit('game:error', 'Not authenticated');
+        return;
+      }
+
+      console.log('🔍 Game state requested by:', user.username);
+      
+      // Try to find existing game for user
+      const game = gameService.getGameByPlayer(user.id);
+      if (game) {
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        console.log('📤 Sent existing game state to:', user.username);
+      } else {
+        console.log('❌ No existing game found for:', user.username);
+        socket.emit('game:error', 'No active game found');
+      }
+    } catch (error) {
+      console.error('❌ Error handling game state request:', error);
+      socket.emit('game:error', 'Failed to get game state');
+    }
+  });
+
   socket.on('game:reset', () => {
     try {
       const result = gameService.resetGame(user.id);
@@ -379,29 +372,6 @@ function addGameHandlers(socket: any, io: any) {
     } catch (error) {
       console.error('❌ Error resetting game:', error);
       socket.emit('game:error', 'Failed to reset game');
-    }
-  });
-
-  // Add the game state request handler properly
-  socket.on('game:request-state', () => {
-    try {
-      console.log('🔍 Game state requested by:', user.username);
-      const currentRoom = userRooms.get(socket.id);
-      console.log('🔍 User is in room:', currentRoom);
-      
-      // Try to find existing game for user
-      const game = gameService.getGameByPlayer(user.id);
-      if (game) {
-        const gameState = game.getGame();
-        socket.emit('game:state-updated', gameState);
-        console.log('📤 Sent existing game state to:', user.username);
-      } else {
-        console.log('❌ No existing game found for:', user.username);
-        socket.emit('game:error', 'No active game found');
-      }
-    } catch (error) {
-      console.error('❌ Error handling game state request:', error);
-      socket.emit('game:error', 'Failed to get game state');
     }
   });
 }
@@ -483,9 +453,6 @@ io.on('connection', (socket) => {
       
       // Join global room automatically for Phase 1
       const globalRoom = getOrCreateGlobalRoom();
-      
-      // Clean up room tracking
-      userRooms.delete(socket.id);
       globalRoom.users.set(socket.id, user);
       socket.join('GLOBAL');
       
@@ -533,9 +500,6 @@ io.on('connection', (socket) => {
     
     // Add to global room messages
     const globalRoom = getOrCreateGlobalRoom();
-      
-      // Clean up room tracking
-      userRooms.delete(socket.id);
     globalRoom.messages.push(message);
     
     // Keep only last 50 messages
@@ -549,7 +513,9 @@ io.on('connection', (socket) => {
     console.log(`💬 Message from ${user.username}: ${data.message}`);
   });
 
-  // Room-specific socket handlers with proper game state integration
+  // Room-specific socket handlers
+// Enhanced handler for room joining that ensures game state sync
+// Enhanced handler for room joining that ensures game state sync
   socket.on('join-game-room', (gameCode: string) => {
     const user = connectedUsers.get(socket.id);
     if (!user) {
@@ -559,12 +525,9 @@ io.on('connection', (socket) => {
     
     console.log(`🎮 User ${user.username} joining game room: ${gameCode}`);
     
-    // Track which room this user is in
-    userRooms.set(socket.id, gameCode);
-    
     // Leave any previous game rooms
-    const socketRooms = Array.from(socket.rooms);
-    socketRooms.forEach(room => {
+    const rooms = Array.from(socket.rooms);
+    rooms.forEach(room => {
       if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
         socket.leave(room);
         console.log(`📤 User ${user.username} left room: ${room}`);
@@ -617,27 +580,154 @@ io.on('connection', (socket) => {
       }
       
       // Add player to game if not already present
-      console.log('🎮 Adding player to game:');
-      console.log('🎮 Game ID:', game.getId());
-      console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
       const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
-      console.log('🎮 Add player result:', success);
       if (success) {
         console.log(`✅ Added ${user.username} to game state`);
+        
+        // Send current game state to the new player
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        
+        // Also send to others in the room
+        socket.to(gameCode).emit('game:state-updated', gameState);
       } else {
         console.log(`ℹ️  ${user.username} already in game state`);
+        
+        // Still send current game state
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+      }
+    }, 100);
+  });;
+      return;
+    }
+    
+    console.log(`🎮 User ${user.username} joining game room: ${gameCode}`);
+    
+    // Leave any previous game rooms
+    const rooms = Array.from(socket.rooms);
+    rooms.forEach(room => {
+      if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+        socket.leave(room);
+        console.log(`📤 User ${user.username} left room: ${room}`);
+      }
+    });
+    
+    // Join the new game room
+    socket.join(gameCode);
+    
+    // Import gameRooms from routes
+    const { gameRooms } = require('./routes/games');
+    const gameRoom = gameRooms.get(gameCode);
+    
+    if (gameRoom) {
+      // Update player socket ID in game room
+      const player = gameRoom.players.find((p: any) => p.username === user.username);
+      if (player) {
+        player.socketId = socket.id;
       }
       
-      // Always send current game state to the player
-      const gameState = game.getGame();
-      console.log('🎮 BEFORE sending game state to:', user.username);
-      console.log('🎮 Game players:', gameState.players.map(p => `${p.username}(${p.team}/${p.role})`));
-      socket.emit('game:state-updated', gameState);
+      // Notify others in the room
+      socket.to(gameCode).emit('player-joined-room', {
+        player: { username: user.username, id: user.id },
+        message: `${user.username} joined the game`,
+        playerCount: gameRoom.players.length
+      });
       
-      // Also send to others in the room
-      console.log('🎮 Broadcasting game state to room:', gameCode);
-      socket.to(gameCode).emit('game:state-updated', gameState);
+      // Send current room state to the joining player
+      socket.emit('room-state', {
+        gameCode: gameCode,
+        players: gameRoom.players.map((p: any) => ({
+          id: p.id,
+          username: p.username,
+          joinedAt: p.joinedAt
+        })),
+        messages: gameRoom.messages.slice(-20)
+      });
+      
+      console.log(`✅ User ${user.username} joined game room ${gameCode}`);
+    } else {
+      socket.emit('error', { message: 'Game room not found' });
+    }
+    
+    // CRITICAL: Also ensure the user is added to the actual game state
+    setTimeout(() => {
+      let game = gameService.getGameForRoom(gameCode);
+      if (!game) {
+        console.log(`🎮 Creating new game for room: ${gameCode}`);
+        game = gameService.createGameForRoom(gameCode);
+      }
+      
+      // Add player to game if not already present
+      const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+      if (success) {
+        console.log(`✅ Added ${user.username} to game state`);
+        
+        // Send current game state to the new player
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        
+        // Also send to others in the room
+        socket.to(gameCode).emit('game:state-updated', gameState);
+      } else {
+        console.log(`ℹ️  ${user.username} already in game state`);
+        
+        // Still send current game state
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+      }
     }, 100);
+  });;
+      return;
+    }
+    
+    console.log(`🎮 User ${user.username} joining game room: ${gameCode}`);
+    
+    // Leave any previous game rooms
+    const rooms = Array.from(socket.rooms);
+    rooms.forEach(room => {
+      if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+        socket.leave(room);
+        console.log(`📤 User ${user.username} left room: ${room}`);
+      }
+    });
+    
+    // Join the new game room
+    socket.join(gameCode);
+    
+    // Import gameRooms from routes
+    const { gameRooms } = require('./routes/games');
+    const gameRoom = gameRooms.get(gameCode);
+    
+    if (gameRoom) {
+      // Update player socket ID in game room
+      const player = gameRoom.players.find((p: any) => p.username === user.username);
+      if (player) {
+        player.socketId = socket.id;
+      }
+      
+      // Notify others in the room
+      socket.to(gameCode).emit('player-joined-room', {
+        player: { username: user.username, id: user.id },
+        message: `${user.username} joined the game`,
+        playerCount: gameRoom.players.length
+      });
+      
+      // Send current room state to the joining player
+      socket.emit('room-state', {
+        gameCode: gameCode,
+        players: gameRoom.players.map((p: any) => ({
+          id: p.id,
+          username: p.username,
+          joinedAt: p.joinedAt
+        })),
+        messages: gameRoom.messages.slice(-20)
+      });
+      
+      console.log(`✅ User ${user.username} joined game room ${gameCode}`);
+    } else {
+      socket.emit('error', { message: 'Game room not found' });
+    }
   });
 
   socket.on('send-room-message', (data: { gameCode: string; message: string }) => {
@@ -678,6 +768,9 @@ io.on('connection', (socket) => {
   });
 
   
+
+  
+
   socket.on('disconnect', () => {
     const user = connectedUsers.get(socket.id);
     if (user) {
@@ -685,9 +778,6 @@ io.on('connection', (socket) => {
       
       // Remove from global room
       const globalRoom = getOrCreateGlobalRoom();
-      
-      // Clean up room tracking
-      userRooms.delete(socket.id);
       globalRoom.users.delete(socket.id);
       
       // Notify others
@@ -700,6 +790,8 @@ io.on('connection', (socket) => {
       const roomUsers = Array.from(globalRoom.users.values());
       io.to('GLOBAL').emit('room-users', { users: roomUsers });
       
+      // Remove from connected users
+
       // Clean up game state for Phase 2
       if (user) gameService.removePlayerFromAllGames(user.id);
       connectedUsers.delete(socket.id);

@@ -1,128 +1,118 @@
 import os
 import sys
 
-def map_directory_structure(root_path='.', max_depth=4, current_depth=0):
-    """Maps the project directory structure with file details, ignoring unnecessary folders."""
+def map_directory_structure():
+    """
+    Maps the current project directory structure and saves it to a file.
+    Handles Windows encoding issues properly.
+    """
     
-    # Folders to ignore
-    ignore_folders = {
+    # Ensure we can handle Unicode characters properly on Windows
+    if sys.platform.startswith('win'):
+        # For Windows, use UTF-8 encoding
+        encoding = 'utf-8'
+    else:
+        encoding = 'utf-8'
+    
+    project_root = '.'
+    output_file = 'project_structure.txt'
+    
+    # Files and directories to ignore
+    ignore_patterns = {
         'node_modules', '.git', 'dist', 'build', '.next', 
-        '__pycache__', '.vscode', '.idea', 'coverage',
-        'logs', 'tmp', 'temp'
+        'coverage', '.nyc_output', '.pytest_cache', '__pycache__',
+        '.env', '.env.local', '.env.development', '.env.production',
+        'logs', '*.log', '.DS_Store', 'Thumbs.db',
+        '.vscode', '.idea', '*.swp', '*.swo'
     }
     
-    # File extensions to ignore
-    ignore_extensions = {'.log', '.tmp', '.cache'}
+    def should_ignore(name):
+        """Check if file/directory should be ignored"""
+        return any(pattern in name or name.endswith(pattern.replace('*', '')) 
+                  for pattern in ignore_patterns)
     
-    items = []
-    if current_depth >= max_depth:
+    def get_structure(path, prefix="", max_depth=4, current_depth=0):
+        """Recursively get directory structure"""
+        if current_depth > max_depth:
+            return []
+        
+        items = []
+        try:
+            entries = sorted(os.listdir(path))
+        except PermissionError:
+            return [f"{prefix}[Permission Denied]"]
+        
+        for entry in entries:
+            if should_ignore(entry):
+                continue
+                
+            entry_path = os.path.join(path, entry)
+            is_dir = os.path.isdir(entry_path)
+            
+            if is_dir:
+                items.append(f"{prefix}{entry}/")
+                # Recursively get subdirectory contents
+                sub_items = get_structure(
+                    entry_path, 
+                    prefix + "  ", 
+                    max_depth, 
+                    current_depth + 1
+                )
+                items.extend(sub_items)
+            else:
+                # Show file size for important files
+                try:
+                    size = os.path.getsize(entry_path)
+                    if size > 1024:
+                        size_str = f" ({size // 1024}KB)"
+                    else:
+                        size_str = f" ({size}B)"
+                except:
+                    size_str = ""
+                
+                items.append(f"{prefix}{entry}{size_str}")
+        
         return items
     
-    try:
-        for item in sorted(os.listdir(root_path)):
-            if item.startswith('.') and item not in {'.env.example', '.gitignore', '.env.template'}:
-                continue
-                
-            # Skip ignored folders
-            if item in ignore_folders:
-                continue
-                
-            item_path = os.path.join(root_path, item)
-            relative_path = os.path.relpath(item_path, '.')
-            
-            if os.path.isdir(item_path):
-                # Directory
-                indent = "  " * current_depth
-                items.append(f"{indent}{item}/")
-                
-                # Recursively map subdirectories
-                subdirectory_items = map_directory_structure(
-                    item_path, max_depth, current_depth + 1
-                )
-                items.extend(subdirectory_items)
-            else:
-                # File - check if we should ignore it
-                _, ext = os.path.splitext(item)
-                if ext in ignore_extensions:
-                    continue
-                    
-                indent = "  " * current_depth
-                try:
-                    size = os.path.getsize(item_path)
-                    if size < 1024:
-                        size_str = f"{size}B"
-                    elif size < 1024 * 1024:
-                        size_str = f"{size // 1024}KB"
-                    else:
-                        size_str = f"{size // (1024 * 1024)}MB"
-                    
-                    items.append(f"{indent}{item} ({size_str})")
-                except OSError:
-                    items.append(f"{indent}{item} (size unknown)")
+    print("Mapping project directory structure...")
     
-    except PermissionError:
-        pass
-    except FileNotFoundError:
-        pass
-    
-    return items
-
-def update_changelog():
-    """Update changelog with script execution info."""
     try:
-        changelog_path = "CHANGELOG.md"
-        if os.path.exists(changelog_path):
-            with open(changelog_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+        structure = get_structure(project_root)
+        
+        # Create output content
+        output_lines = [
+            "=== CODENAMES PROJECT STRUCTURE ===",
+            f"Generated: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Root: {os.path.abspath(project_root)}",
+            "",
+            "Structure:",
+            ""
+        ]
+        output_lines.extend(structure)
+        
+        # Write to file with proper encoding
+        with open(output_file, 'w', encoding=encoding, errors='replace') as f:
+            for line in output_lines:
+                # Clean any problematic characters for Windows
+                clean_line = line.encode('ascii', errors='replace').decode('ascii')
+                f.write(clean_line + '\n')
+        
+        print(f"Project structure saved to: {output_file}")
+        print(f"Total items mapped: {len(structure)}")
+        
+        # Also print key information to console
+        print("\n=== KEY PROJECT INFO ===")
+        for line in output_lines[:20]:  # Show first 20 lines
+            print(line.encode('ascii', errors='replace').decode('ascii'))
+        
+        if len(output_lines) > 20:
+            print(f"... and {len(output_lines) - 20} more lines in {output_file}")
             
-            # Find Python Scripts section
-            if "## Python Scripts Run" not in content:
-                # Add section if it doesn't exist
-                content += "\n\n## Python Scripts Run\n"
-            
-            # Add new entry
-            new_entry = "- directory_mapper.py: Generated clean project structure to project_structure.txt (ignored node_modules)\n"
-            
-            # Insert after the Python Scripts Run header
-            lines = content.split('\n')
-            for i, line in enumerate(lines):
-                if line.strip() == "## Python Scripts Run":
-                    lines.insert(i + 1, new_entry)
-                    break
-            
-            # Write back
-            with open(changelog_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines))
-                
     except Exception as e:
-        pass  # Silently fail if changelog update doesn't work
-
-def main():
-    output_file = "project_structure.txt"
+        print(f"Error mapping directory: {str(e)}")
+        return False
     
-    structure = map_directory_structure()
-    
-    # Create output content
-    output_content = []
-    output_content.append("CODENAMES PROJECT STRUCTURE (Clean)")
-    output_content.append("=" * 50)
-    output_content.extend(structure)
-    output_content.append("\n" + "=" * 50)
-    output_content.append(f"Total items: {len(structure)}")
-    
-    # Write to file
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(output_content))
-        print(f"Project structure saved to {output_file}")
-    except Exception as e:
-        print(f"Error writing to file: {e}")
-        # Fallback to console output
-        for line in output_content:
-            print(line)
-    
-    # Update changelog
-    update_changelog()
+    return True
 
 if __name__ == "__main__":
-    main()
+    map_directory_structure()

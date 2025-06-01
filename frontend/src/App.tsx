@@ -23,7 +23,8 @@ function App() {
         if (result.success) {
           setIsAuthenticated(true);
           setUser(savedUser);
-          // Initialize socket connection with token
+          // Initialize socket connection with token - SINGLE SOURCE OF TRUTH
+          console.log('🔌 App.tsx: Initializing socket connection');
           socketService.connect();
           socketService.authenticate(token);
         } else {
@@ -37,7 +38,8 @@ function App() {
   const handleLogin = (userData: any, token: string) => {
     setIsAuthenticated(true);
     setUser(userData);
-    // Connect to socket after successful login
+    // Connect to socket after successful login - SINGLE SOURCE OF TRUTH
+    console.log('🔌 App.tsx: Connecting socket after login');
     socketService.connect();
     socketService.authenticate(token);
   };

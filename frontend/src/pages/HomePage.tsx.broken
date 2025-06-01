@@ -24,17 +24,7 @@ const HomePage: React.FC = () => {
     socketInstance: null as any
   });
   
-  // Regular state
-  const [roomCode, setRoomCode] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
-  const [error, setError] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
-  const [games, setGames] = useState<GameListItem[]>([]);
-  const [isLoadingGames, setIsLoadingGames] = useState(false);
-  const navigate = useNavigate();
-
-  // Socket debug monitoring
+  // Update socket debug info
   useEffect(() => {
     const updateDebugInfo = () => {
       const socket = socketService.socket;
@@ -75,6 +65,14 @@ const HomePage: React.FC = () => {
       clearInterval(interval);
     };
   }, []);
+  const [roomCode, setRoomCode] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
+  const [games, setGames] = useState<GameListItem[]>([]);
+  const [isLoadingGames, setIsLoadingGames] = useState(false);
+  const navigate = useNavigate();
 
   // Load games list on component mount and refresh periodically
   useEffect(() => {
@@ -372,7 +370,7 @@ const HomePage: React.FC = () => {
             </div>
           )}
         </div>
-
+      <div className="max-w-6xl mx-auto p-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">Welcome to Codenames!</h1>
         
         {/* MAIN GAME SECTION - Priority #1 */}
