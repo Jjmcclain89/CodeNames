@@ -199,8 +199,16 @@ function addGameHandlers(socket: any, io: any) {
         socket.emit('game:error', 'Not in a game room');
         return;
       }
-      const roomCode = currentRoom; // For now, use global room for games
-      const game = gameService.createGameForRoom(roomCode);
+      const roomCode = currentRoom;
+      
+      // Join existing game or create new one (DON'T always create new)
+      let game = gameService.getGameForRoom(roomCode);
+      if (!game) {
+        console.log('🎮 No existing game for room:', roomCode, '- creating new one');
+        game = gameService.createGameForRoom(roomCode);
+      } else {
+        console.log('🎮 Found existing game for room:', roomCode, '- joining it');
+      }
       
       // Add player to game
       console.log('🎮 Adding player to game:');
@@ -213,13 +221,13 @@ function addGameHandlers(socket: any, io: any) {
         const gameState = game.getGame();
         socket.emit('game:state-updated', gameState);
         socket.to(roomCode).emit('game:player-joined', gameState.players.find((p: any )=> p.id === user.id));
-        console.log('🎮 Game created for room:', roomCode, 'by:', user.username);
+        console.log('🎮 Player', user.username, 'joined game in room:', roomCode);
       } else {
-        socket.emit('game:error', 'Failed to create game');
+        socket.emit('game:error', 'Failed to join game');
       }
     } catch (error) {
-      console.error('❌ Error creating game:', error);
-      socket.emit('game:error', 'Failed to create game');
+      console.error('❌ Error joining/creating game:', error);
+      socket.emit('game:error', 'Failed to join game');
     }
   });
 
@@ -245,48 +253,73 @@ function addGameHandlers(socket: any, io: any) {
 
   socket.on('game:join-team', (team: string, role: string) => {
     try {
+      console.log(`\n🏆 [TEAM ASSIGNMENT] ${user.username} wants to join ${team} team as ${role}`);
+      
       // Get or create game for current room
-      // Get user's current room instead of hardcoded GLOBAL
       const currentRoom = userRooms.get(socket.id);
+      console.log(`🏆 [ROOM CHECK] ${user.username} is in room:`, currentRoom);
+      
       if (!currentRoom) {
+        console.log(`❌ [ROOM ERROR] ${user.username} not in a game room`);
         socket.emit('game:error', 'Not in a game room');
         return;
       }
+      
       const roomCode = currentRoom;
       let game = gameService.getGameForRoom(roomCode);
+      console.log(`🏆 [GAME LOOKUP] Game exists for room ${roomCode}:`, !!game);
       
       if (!game) {
+        console.log(`🏆 [GAME CREATE] Creating new game for ${roomCode} during team assignment`);
         game = gameService.createGameForRoom(roomCode);
         gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
       }
 
-      console.log('🎮 BEFORE team assignment:');
-      console.log('🎮 User:', user.username, 'ID:', user.id);
-      console.log('🎮 Attempting to join team:', team, 'as', role);
-      console.log('🎮 Current room:', currentRoom);
+      // Log detailed game state before assignment
+      const preState = game.getGame();
+      console.log(`🏆 [PRE-ASSIGNMENT] Game ${game.getId()} state:`);
+      console.log(`🏆 [PRE-ASSIGNMENT] Total players: ${preState.players.length}`);
+      preState.players.forEach((p, i) => {
+        console.log(`  ${i+1}. ${p.username} (${p.id}) - ${p.team}/${p.role} - Online: ${p.isOnline}`);
+      });
       
       // Check if player exists in game before assignment
       const existingGame = gameService.getGameByPlayer(user.id);
-      console.log('🎮 Player exists in game:', !!existingGame);
-      if (existingGame) {
-        const existingState = existingGame.getGame();
-        console.log('🎮 Existing game players:', existingState.players.map(p => `${p.username}(${p.team}/${p.role})`));
+      console.log(`🏆 [PLAYER CHECK] ${user.username} exists in a game:`, !!existingGame);
+      
+      if (!existingGame) {
+        console.log(`❌ [PLAYER ERROR] ${user.username} not found in any game - this should not happen!`);
+        // Try to add them
+        const addResult = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+        console.log(`🏆 [PLAYER FIX] Attempted to add ${user.username} to game:`, addResult);
       }
       
+      // Attempt team assignment
+      console.log(`🏆 [ASSIGNMENT] Calling assignPlayerToTeam for ${user.username}`);
       const result = gameService.assignPlayerToTeam(user.id, team as any, role as any);
-      
-      console.log('🎮 AFTER team assignment:');
-      console.log('🎮 Assignment result:', result);
+      console.log(`🏆 [ASSIGNMENT] Result:`, result);
       
       if (result.success) {
         const gameState = game.getGame();
+        console.log(`🏆 [SUCCESS] ${user.username} successfully joined ${team} team as ${role}`);
+        console.log(`🏆 [SUCCESS] Broadcasting updated game state to room ${roomCode}`);
+        
+        // Log final state
+        console.log(`🏆 [FINAL STATE] Game now has ${gameState.players.length} players:`);
+        gameState.players.forEach((p, i) => {
+          console.log(`  ${i+1}. ${p.username} - ${p.team}/${p.role}`);
+        });
+        
         io.to(roomCode).emit('game:state-updated', gameState);
-        console.log('👥 Player', user.username, 'joined', team, 'team as', role);
+        console.log(`👥 [BROADCAST COMPLETE] All players in ${roomCode} notified of ${user.username} joining ${team} team`);
       } else {
+        console.log(`❌ [ASSIGNMENT FAILED] ${user.username} could not join ${team} team as ${role}: ${result.error}`);
         socket.emit('game:error', result.error || 'Failed to join team');
       }
+      
+      console.log(`🏆 [TEAM ASSIGNMENT] Completed for ${user.username}\n`);
     } catch (error) {
-      console.error('❌ Error joining team:', error);
+      console.error(`❌ [TEAM ASSIGNMENT ERROR] Error for ${user.username}:`, error);
       socket.emit('game:error', 'Failed to join team');
     }
   });
@@ -484,9 +517,7 @@ io.on('connection', (socket) => {
       // Join global room automatically for Phase 1
       const globalRoom = getOrCreateGlobalRoom();
       
-      // Clean up room tracking
-      userRooms.delete(socket.id);
-      globalRoom.users.set(socket.id, user);
+            globalRoom.users.set(socket.id, user);
       socket.join('GLOBAL');
       
       socket.emit('authenticated', { 
@@ -534,9 +565,7 @@ io.on('connection', (socket) => {
     // Add to global room messages
     const globalRoom = getOrCreateGlobalRoom();
       
-      // Clean up room tracking
-      userRooms.delete(socket.id);
-    globalRoom.messages.push(message);
+          globalRoom.messages.push(message);
     
     // Keep only last 50 messages
     if (globalRoom.messages.length > 50) {

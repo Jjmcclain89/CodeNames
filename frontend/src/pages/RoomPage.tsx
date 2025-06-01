@@ -412,8 +412,10 @@ const RoomPage: React.FC = () => {
         <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded p-3 text-xs">
           <strong>🔍 Debug:</strong> Connected: {isConnected ? 'Yes' : 'No'} | 
           Game State: {gameState ? 'Loaded' : 'None'} | 
-          Players in Game: {gameState?.players?.length || 0} | 
-          User: {currentUser?.username}
+          Game Players: {gameState?.players?.length || 0} | 
+          Room Players: {players.length} | 
+          User: {currentUser?.username} | 
+          Room: {roomCode}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

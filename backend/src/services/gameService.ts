@@ -82,7 +82,28 @@ export class GameService {
 
   // Existing game lifecycle methods
   createGameForRoom(roomCode: string): CodenamesGameModel {
-    // Remove any existing game for this room
+    // Check if game already exists - don't delete it!
+    const existingGame = this.getGameForRoom(roomCode);
+    if (existingGame) {
+      console.log(`⚠️  Game already exists for room ${roomCode}, returning existing game`);
+      return existingGame;
+    }
+
+
+  // Method to explicitly create a fresh game (for reset/restart scenarios)
+    console.log(`🎮 Creating new game for room: ${roomCode}`);
+    const gameModel = new CodenamesGameModel(roomCode);
+    this.games.set(gameModel.getId(), {
+      model: gameModel,
+      lastActivity: new Date()
+    });
+
+    return gameModel;
+  }
+
+  // Method to explicitly create a fresh game (for reset/restart scenarios)
+  createFreshGameForRoom(roomCode: string): CodenamesGameModel {
+    console.log(`🎮 Creating fresh game for room: ${roomCode} (deleting any existing)`);
     this.deleteGameForRoom(roomCode);
 
     const gameModel = new CodenamesGameModel(roomCode);
@@ -155,16 +176,35 @@ export class GameService {
 
   // Player management
   addPlayerToGame(gameId: string, playerId: string, username: string, socketId: string): boolean {
+    console.log(`🎯 [ADDPLAYER] Adding ${username} (${playerId}) to game ${gameId}`);
+    
     const game = this.getGame(gameId);
-    if (!game) return false;
+    if (!game) {
+      console.log(`❌ [ADDPLAYER] Game ${gameId} not found`);
+      return false;
+    }
 
-    // Remove player from any existing game first
-    this.removePlayerFromAllGames(playerId);
+    // Check if player is already in THIS game
+    const currentGame = this.getGameByPlayer(playerId);
+    if (currentGame && currentGame.getId() === gameId) {
+      console.log(`ℹ️  [ADDPLAYER] ${username} already in game ${gameId}`);
+      return true; // Already in the correct game
+    }
+
+    // Remove player from any other game first
+    if (currentGame && currentGame.getId() !== gameId) {
+      console.log(`🔄 [ADDPLAYER] Moving ${username} from game ${currentGame.getId()} to ${gameId}`);
+      this.removePlayerFromAllGames(playerId);
+    }
 
     const success = game.addPlayer(playerId, username, socketId);
     if (success) {
       this.playerGameMap.set(playerId, gameId);
+      console.log(`✅ [ADDPLAYER] Successfully added ${username} to game ${gameId}`);
+    } else {
+      console.log(`❌ [ADDPLAYER] Failed to add ${username} to game ${gameId}`);
     }
+    
     return success;
   }
 
@@ -195,12 +235,25 @@ export class GameService {
   }
 
   assignPlayerToTeam(playerId: string, team: TeamColor, role: PlayerRole): { success: boolean; error?: string } {
+    console.log(`🎯 [GAMESERVICE] assignPlayerToTeam called for player ${playerId} to join ${team} as ${role}`);
+    
     const game = this.getGameByPlayer(playerId);
     if (!game) {
+      console.log(`❌ [GAMESERVICE] Player ${playerId} not found in any game`);
+      console.log(`🎯 [GAMESERVICE] Current player-game mappings:`, Array.from(this.playerGameMap.entries()));
       return { success: false, error: 'Player not in any game' };
     }
 
+    console.log(`🎯 [GAMESERVICE] Found game ${game.getId()} for player ${playerId}`);
+    const preState = game.getGame();
+    console.log(`🎯 [GAMESERVICE] Pre-assignment game state:`, preState.players.map(p => `${p.username}(${p.team}/${p.role})`));
+    
     const success = game.assignPlayerToTeam(playerId, team, role);
+    
+    const postState = game.getGame();
+    console.log(`🎯 [GAMESERVICE] Post-assignment game state:`, postState.players.map(p => `${p.username}(${p.team}/${p.role})`));
+    console.log(`🎯 [GAMESERVICE] Assignment result: ${success}`);
+    
     return { 
       success, 
       error: success ? undefined : 'Cannot assign to team - team may already have a spymaster' 
