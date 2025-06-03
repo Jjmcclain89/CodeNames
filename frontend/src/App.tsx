@@ -14,18 +14,40 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   useEffect(() => {
+    console.log('🔍 APP DEBUG: useEffect triggered');
+    console.log('🔍 APP DEBUG: Timestamp:', Date.now());
+    console.log('🔍 APP DEBUG: Call stack:', new Error().stack?.split('\n').slice(0, 5).join('\n'));
+    
     const initAuth = async () => {
       const token = authService.getToken();
       const savedUser = authService.getUser();
+      console.log('🔍 APP DEBUG: Token exists:', !!token);
+      console.log('🔍 APP DEBUG: Saved user exists:', !!savedUser);
+      
       if (token && savedUser) {
         // Verify token is still valid
         const result = await authService.verifyToken(token);
+        console.log('🔍 APP DEBUG: Token verification result:', result.success);
+        
         if (result.success) {
           setIsAuthenticated(true);
           setUser(savedUser);
           // Initialize socket connection with token - SINGLE SOURCE OF TRUTH
-          console.log('🔌 App.tsx: Initializing socket connection');
+          console.log('🔌 App.tsx: Initializing socket connection for user:', savedUser.username);
+          console.log('🔌 App.tsx: Current socket state before connect:', {
+            hasSocket: !!socketService.socket,
+            isConnected: socketService.socket?.connected,
+            socketId: socketService.socket?.id
+          });
+          
           socketService.connect();
+          
+          console.log('🔌 App.tsx: Socket state after connect:', {
+            hasSocket: !!socketService.socket,
+            isConnected: socketService.socket?.connected,
+            socketId: socketService.socket?.id
+          });
+          
           socketService.authenticate(token);
         } else {
           authService.logout();
@@ -36,11 +58,25 @@ function App() {
     initAuth();
   }, []);
   const handleLogin = (userData: any, token: string) => {
+    console.log('🔍 LOGIN DEBUG: handleLogin called for user:', userData.username);
+    console.log('🔍 LOGIN DEBUG: Current socket state before login connect:', {
+      hasSocket: !!socketService.socket,
+      isConnected: socketService.socket?.connected,
+      socketId: socketService.socket?.id
+    });
+    
     setIsAuthenticated(true);
     setUser(userData);
     // Connect to socket after successful login - SINGLE SOURCE OF TRUTH
-    console.log('🔌 App.tsx: Connecting socket after login');
+    console.log('🔌 App.tsx: Connecting socket after login for:', userData.username);
     socketService.connect();
+    
+    console.log('🔍 LOGIN DEBUG: Socket state after login connect:', {
+      hasSocket: !!socketService.socket,
+      isConnected: socketService.socket?.connected,
+      socketId: socketService.socket?.id
+    });
+    
     socketService.authenticate(token);
   };
   const handleLogout = () => {

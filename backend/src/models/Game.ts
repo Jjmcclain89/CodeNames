@@ -103,22 +103,52 @@ export class CodenamesGameModel {
 
   // Game flow
   canStartGame(): boolean {
-    if (this.game.status !== 'waiting') return false;
+    console.log('🔍 [VALIDATION] Checking if game can start');
+    console.log('🔍 [VALIDATION] Game status:', this.game.status);
+    console.log('🔍 [VALIDATION] Player count:', this.game.players.length);
     
-    // For testing: allow starting with just one player
-    if (process.env.NODE_ENV === 'development' && this.game.players.length >= 1) {
+    if (this.game.status !== 'waiting') {
+      console.log('❌ [VALIDATION] Game not in waiting status');
+      return false;
+    }
+    
+    // Log all players and their teams/roles
+    console.log('🔍 [VALIDATION] Current players:');
+    this.game.players.forEach((p, i) => {
+      console.log(`  ${i+1}. ${p.username} - Team: ${p.team}, Role: ${p.role}`);
+    });
+    
+    // For testing: allow starting with just one player if they're assigned to a team
+    const hasTeamPlayers = this.game.players.some(p => p.team === 'red' || p.team === 'blue');
+    if (process.env.NODE_ENV === 'development' && this.game.players.length >= 1 && hasTeamPlayers) {
+      console.log('✅ [VALIDATION] Development mode - allowing start with assigned players');
       return true;
     }
     
-    // Production: need proper teams
-    if (this.game.players.length < GAME_CONFIG.MIN_PLAYERS) return false;
+    // Relaxed validation for testing - just need players on teams
+    if (this.game.players.length < 2) {
+      console.log('❌ [VALIDATION] Need at least 2 players');
+      return false;
+    }
 
     const redSpymaster = this.game.players.find(p => p.team === 'red' && p.role === 'spymaster');
     const blueSpymaster = this.game.players.find(p => p.team === 'blue' && p.role === 'spymaster');
     const redOperatives = this.game.players.filter(p => p.team === 'red' && p.role === 'operative');
     const blueOperatives = this.game.players.filter(p => p.team === 'blue' && p.role === 'operative');
+    
+    console.log('🔍 [VALIDATION] Red spymaster:', !!redSpymaster);
+    console.log('🔍 [VALIDATION] Blue spymaster:', !!blueSpymaster);
+    console.log('🔍 [VALIDATION] Red operatives:', redOperatives.length);
+    console.log('🔍 [VALIDATION] Blue operatives:', blueOperatives.length);
 
-    return !!(redSpymaster && blueSpymaster && redOperatives.length > 0 && blueOperatives.length > 0);
+    // Relaxed validation: just need at least one player per team (can be spymaster OR operative)
+    const redPlayers = this.game.players.filter(p => p.team === 'red');
+    const bluePlayers = this.game.players.filter(p => p.team === 'blue');
+    
+    const canStart = redPlayers.length > 0 && bluePlayers.length > 0;
+    console.log('🔍 [VALIDATION] Can start game:', canStart, '(Red:', redPlayers.length, 'Blue:', bluePlayers.length, ')');
+    
+    return canStart;
   }
 
   startGame(): boolean {

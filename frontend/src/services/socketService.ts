@@ -29,19 +29,24 @@ class SocketService {
   private _socket: Socket | null = null;
   private token: string | null = null;
   private isConnecting: boolean = false; // Track connection in progress
+  private connectionCounter: number = 0;
+  private lastAuthenticatedToken: string | null = null;
 
   get socket(): Socket | null {
     return this._socket;
   }
 
   connect(): Socket {
+    this.connectionCounter++;
     // Track what is calling connect
-    console.log('🔌 CONNECT() CALLED');
-    console.log('🔌 Call stack:', new Error().stack);
+    console.log('🔌 CONNECT() CALLED #' + this.connectionCounter);
+    console.log('🔌 Call stack:', new Error().stack?.split('\n').slice(0, 8).join('\n'));
     console.log('🔌 Current socket state:', {
       hasSocket: !!this._socket,
       isConnected: this._socket?.connected,
-      isConnecting: this.isConnecting
+      isConnecting: this.isConnecting,
+      socketId: this._socket?.id,
+      connectionCounter: this.connectionCounter
     });
 
     // Make socket service accessible for debugging
@@ -94,14 +99,36 @@ class SocketService {
       this._socket.disconnect();
       this._socket = null;
       this.isConnecting = false; // Reset connection state
+      this.lastAuthenticatedToken = null; // Reset authentication state
     }
   }
 
   authenticate(token: string): void {
+    console.log('🔐 AUTHENTICATE() CALLED');
+    console.log('🔐 Socket exists:', !!this._socket);
+    console.log('🔐 Socket connected:', this._socket?.connected);
+    console.log('🔐 Socket ID:', this._socket?.id);
+    console.log('🔐 Token (first 20 chars):', token?.substring(0, 20) + '...');
+    console.log('🔐 Last authenticated token:', this.lastAuthenticatedToken?.substring(0, 20) + '...');
+    
+    // Prevent duplicate authentication with the same token
+    if (this.lastAuthenticatedToken === token && this._socket?.connected) {
+      console.log('🔐 Already authenticated with this token, triggering success callback immediately');
+      // Trigger the authenticated callback immediately since we're already authenticated
+      // setTimeout removed - using direct callback approach
+        this._socket?.emit('authenticated', { success: true, user: { token } });
+      
+      return;
+    }
+    
     this.token = token;
+    this.lastAuthenticatedToken = token;
+    
     if (this._socket) {
-      console.log('🔐 Authenticating with token');
+      console.log('🔐 Emitting authenticate event to backend');
       this._socket.emit('authenticate', token);
+    } else {
+      console.log('❌ No socket available for authentication');
     }
   }
 
@@ -191,11 +218,8 @@ class SocketService {
       console.log('🔌 Connect event fired - total event listeners:', this._socket?.listeners('connect').length);
       this.isConnecting = false; // Connection completed
       
-      // Re-authenticate if we have a token
-      if (this.token) {
-        console.log('🔐 Re-authenticating after reconnection');
-        this.authenticate(this.token);
-      }
+      // NOTE: Manual authentication will be called by App.tsx - no need to auto-authenticate
+      console.log('🔐 Socket connected, waiting for manual authentication call');
     });
 
     this._socket.on('disconnect', (reason) => {

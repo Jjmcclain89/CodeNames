@@ -1,3 +1,533 @@
+================================================================================
+COMBINED FILES FOR CLAUDE IMPORT
+Generated from 5 files
+================================================================================
+
+TABLE OF CONTENTS:
+ 1. frontend/src/main.tsx
+ 2. frontend/src/App.tsx
+ 3. frontend/src/services/socketService.ts
+ 4. frontend/src/hooks/useSocket.ts
+ 5. frontend/src/pages/RoomPage.tsx
+
+================================================================================
+
+============================================================
+FILE: frontend/src/main.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\main.tsx
+SIZE: 191 characters
+============================================================
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.tsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <App />,
+)
+
+
+============================================================
+FILE: frontend/src/App.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\App.tsx
+SIZE: 3860 characters
+============================================================
+import React, { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
+import RoomPage from './pages/RoomPage';
+import GamePage from './pages/GamePage';
+import DebugPage from './pages/DebugPage';
+import GameDebugPage from './pages/GameDebugPage';
+import authService from './services/authService';
+import socketService from './services/socketService';
+import './App.css';
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  useEffect(() => {
+    const initAuth = async () => {
+      const token = authService.getToken();
+      const savedUser = authService.getUser();
+      if (token && savedUser) {
+        // Verify token is still valid
+        const result = await authService.verifyToken(token);
+        if (result.success) {
+          setIsAuthenticated(true);
+          setUser(savedUser);
+          // Initialize socket connection with token - SINGLE SOURCE OF TRUTH
+          console.log('🔌 App.tsx: Initializing socket connection');
+          socketService.connect();
+          socketService.authenticate(token);
+        } else {
+          authService.logout();
+        }
+      }
+      setIsLoading(false);
+    };
+    initAuth();
+  }, []);
+  const handleLogin = (userData: any, token: string) => {
+    setIsAuthenticated(true);
+    setUser(userData);
+    // Connect to socket after successful login - SINGLE SOURCE OF TRUTH
+    console.log('🔌 App.tsx: Connecting socket after login');
+    socketService.connect();
+    socketService.authenticate(token);
+  };
+  const handleLogout = () => {
+    authService.logout();
+    socketService.disconnect();
+    setIsAuthenticated(false);
+    setUser(null);
+  };
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+  return (
+    <Router>
+      <div className="App min-h-screen bg-gray-50">
+        <header className="bg-blue-600 text-white p-4 shadow-lg">
+          <div className="container mx-auto flex justify-between items-center">
+            <h1 className="text-2xl font-bold">Codenames</h1>
+            {isAuthenticated && (
+              <div className="flex items-center space-x-4">
+                <span>Welcome, {user?.username}!</span>
+                <button
+                  onClick={handleLogout}
+                  className="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded text-sm"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+        <main className="container mx-auto p-4">
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                !isAuthenticated ?
+                <LoginPage onLogin={handleLogin} /> :
+                <Navigate to="/" replace />
+              }
+            />
+            <Route
+              path="/"
+              element={
+                isAuthenticated ?
+                <HomePage /> :
+                <Navigate to="/login" replace />
+              }
+            />
+            <Route
+              path="/room/:roomCode"
+              element={
+                isAuthenticated ?
+                <RoomPage /> :
+                <Navigate to="/login" replace />
+              }
+            />
+            <Route path="/game" element={<GamePage />} />
+            <Route path="/debug-game" element={<GameDebugPage />} />
+                      <Route
+              path="/debug"
+              element={<DebugPage />}
+            />
+            </Routes>
+        </main>
+      </div>
+    </Router>
+  );
+}
+export default App;
+
+
+============================================================
+FILE: frontend/src/services/socketService.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\services\socketService.ts
+SIZE: 6113 characters
+============================================================
+import { io, Socket } from 'socket.io-client';
+
+export interface User {
+  id: string;
+  username: string;
+  socketId?: string;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  code: string;
+  maxPlayers: number;
+  users: Array<{
+    user: User;
+    role: string;
+    team?: string;
+  }>;
+}
+
+export interface ChatMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: string;
+}
+
+class SocketService {
+  private _socket: Socket | null = null;
+  private token: string | null = null;
+  private isConnecting: boolean = false; // Track connection in progress
+
+  get socket(): Socket | null {
+    return this._socket;
+  }
+
+  connect(): Socket {
+    // Track what is calling connect
+    console.log('🔌 CONNECT() CALLED');
+    console.log('🔌 Call stack:', new Error().stack);
+    console.log('🔌 Current socket state:', {
+      hasSocket: !!this._socket,
+      isConnected: this._socket?.connected,
+      isConnecting: this.isConnecting
+    });
+
+    // Make socket service accessible for debugging
+    (window as any).socketService = this;
+
+    // Check if already connected
+    if (this._socket?.connected) {
+      console.log('📡 Socket already connected, reusing existing connection');
+      return this._socket;
+    }
+
+    // Check if connection is in progress
+    if (this.isConnecting) {
+      console.log('📡 Connection already in progress, waiting...');
+      return this._socket!;
+    }
+
+    // Check if socket exists but is disconnected
+    if (this._socket && !this._socket.connected) {
+      console.log('📡 Reconnecting existing socket');
+      this._socket.connect();
+      return this._socket;
+    }
+
+    console.log('📡 Creating new socket connection');
+    this.isConnecting = true;
+
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+    console.log('📡 Connecting to socket server:', socketUrl);
+
+    this._socket = io(socketUrl, {
+      autoConnect: false,
+      transports: ['websocket', 'polling'],
+      timeout: 5000,
+      forceNew: false, // Don't force new connections
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+
+    this.setupEventListeners();
+    this._socket.connect();
+
+    return this._socket;
+  }
+
+  disconnect(): void {
+    if (this._socket) {
+      console.log('📡 Disconnecting socket');
+      this._socket.disconnect();
+      this._socket = null;
+      this.isConnecting = false; // Reset connection state
+    }
+  }
+
+  authenticate(token: string): void {
+    this.token = token;
+    if (this._socket) {
+      console.log('🔐 Authenticating with token');
+      this._socket.emit('authenticate', token);
+    }
+  }
+
+  joinRoom(roomCode: string): void {
+    if (this._socket) {
+      console.log('🏠 Joining room:', roomCode);
+      this._socket.emit('join-room', { roomCode });
+    }
+  }
+
+  leaveRoom(): void {
+    if (this._socket) {
+      console.log('🚪 Leaving room');
+      this._socket.emit('leave-room');
+    }
+  }
+
+  createRoom(roomName?: string): void {
+    if (this._socket) {
+      console.log('🏗️ Creating room:', roomName || 'Unnamed');
+      this._socket.emit('create-room', { roomName });
+    }
+  }
+
+  sendMessage(message: string): void {
+    if (this._socket) {
+      console.log('💬 Sending message:', message);
+      this._socket.emit('chat-message', { message });
+    }
+  }
+
+  // Event listener registration methods
+  onAuthenticated(callback: (data: any) => void): void {
+    this._socket?.on('authenticated', callback);
+  }
+
+  onRoomJoined(callback: (data: any) => void): void {
+    this._socket?.on('room-joined', callback);
+  }
+
+  onRoomCreated(callback: (data: any) => void): void {
+    this._socket?.on('room-created', callback);
+  }
+
+  onUserJoined(callback: (data: any) => void): void {
+    this._socket?.on('user-joined', callback);
+  }
+
+  onUserLeft(callback: (data: any) => void): void {
+    this._socket?.on('user-left', callback);
+  }
+
+  onRoomUsersUpdated(callback: (data: { users: User[] }) => void): void {
+    this._socket?.on('room-users-updated', callback);
+  }
+
+  onChatMessage(callback: (message: ChatMessage) => void): void {
+    this._socket?.on('chat-message', callback);
+  }
+
+  onError(callback: (error: any) => void): void {
+    this._socket?.on('error', callback);
+  }
+
+  onConnect(callback: () => void): void {
+    this._socket?.on('connect', callback);
+  }
+
+  onDisconnect(callback: () => void): void {
+    this._socket?.on('disconnect', callback);
+  }
+
+  // Cleanup method to remove specific listeners
+  off(event: string, callback?: Function): void {
+    if (callback) {
+      this._socket?.off(event, callback);
+    } else {
+      this._socket?.off(event);
+    }
+  }
+
+  private setupEventListeners(): void {
+    if (!this._socket) return;
+
+    this._socket.on('connect', () => {
+      console.log('✅ Connected to server, Socket ID:', this._socket?.id);
+      console.log('🔌 Connect event fired - total event listeners:', this._socket?.listeners('connect').length);
+      this.isConnecting = false; // Connection completed
+      
+      // Re-authenticate if we have a token
+      if (this.token) {
+        console.log('🔐 Re-authenticating after reconnection');
+        this.authenticate(this.token);
+      }
+    });
+
+    this._socket.on('disconnect', (reason) => {
+      console.log('❌ Disconnected from server. Reason:', reason);
+    });
+
+    this._socket.on('connect_error', (error) => {
+      console.error('🚫 Socket connection error:', error);
+      this.isConnecting = false; // Reset on connection error
+    });
+
+    this._socket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
+    });
+
+    this._socket.on('reconnect_error', (error) => {
+      console.error('🔄 Reconnection failed:', error);
+    });
+  }
+
+  get isConnected(): boolean {
+    return this._socket?.connected || false;
+  }
+
+  get isConnectionReady(): boolean {
+    return this._socket?.connected && !this.isConnecting;
+  }
+
+  get socketId(): string | undefined {
+    return this._socket?.id;
+  }
+}
+
+// Export singleton instance
+export const socketService = new SocketService();
+export default socketService;
+
+
+============================================================
+FILE: frontend/src/hooks/useSocket.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\hooks\useSocket.ts
+SIZE: 4025 characters
+============================================================
+import { useEffect, useRef, useState } from 'react';
+import socketService, { User, Room, ChatMessage } from '../services/socketService';
+
+export const useSocket = () => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
+  const [roomUsers, setRoomUsers] = useState<User[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  // Use refs to store callbacks to avoid re-registering listeners
+  const handlersRef = useRef({
+    onConnect: () => {
+      setIsConnected(true);
+      setConnectionError(null);
+    },
+    onDisconnect: () => {
+      setIsConnected(false);
+    },
+    onAuthenticated: (data: any) => {
+      if (data.success) {
+        console.log('Authenticated successfully');
+      } else {
+        console.error('Authentication failed:', data.error);
+        setConnectionError(data.error);
+      }
+    },
+    onRoomJoined: (data: any) => {
+      setCurrentRoom(data.room);
+      setMessages([]); // Clear messages when joining new room
+      console.log('Joined room:', data.room.code);
+    },
+    onRoomCreated: (data: any) => {
+      console.log('Room created:', data.room.code);
+    },
+    onUserJoined: (data: any) => {
+      console.log('User joined:', data.username);
+    },
+    onUserLeft: (data: any) => {
+      console.log('User left:', data.username);
+    },
+    onRoomUsersUpdated: (data: { users: User[] }) => {
+      setRoomUsers(data.users);
+    },
+    onChatMessage: (message: ChatMessage) => {
+      setMessages(prev => [...prev, message]);
+    },
+    onError: (error: any) => {
+      console.error('Socket error:', error);
+      setConnectionError(error.message);
+    }
+  });
+
+  useEffect(() => {
+    // Don't auto-connect - let App.tsx handle connection
+    const socket = socketService.socket;
+    if (!socket) {
+      console.log('⚠️ useSocket: No socket available, waiting for App.tsx to connect');
+      return;
+    }
+    const handlers = handlersRef.current;
+
+    // Register event listeners
+    socketService.onConnect(handlers.onConnect);
+    socketService.onDisconnect(handlers.onDisconnect);
+    socketService.onAuthenticated(handlers.onAuthenticated);
+    socketService.onRoomJoined(handlers.onRoomJoined);
+    socketService.onRoomCreated(handlers.onRoomCreated);
+    socketService.onUserJoined(handlers.onUserJoined);
+    socketService.onUserLeft(handlers.onUserLeft);
+    socketService.onRoomUsersUpdated(handlers.onRoomUsersUpdated);
+    socketService.onChatMessage(handlers.onChatMessage);
+    socketService.onError(handlers.onError);
+
+    return () => {
+      // Cleanup listeners
+      socketService.off('connect', handlers.onConnect);
+      socketService.off('disconnect', handlers.onDisconnect);
+      socketService.off('authenticated', handlers.onAuthenticated);
+      socketService.off('room-joined', handlers.onRoomJoined);
+      socketService.off('room-created', handlers.onRoomCreated);
+      socketService.off('user-joined', handlers.onUserJoined);
+      socketService.off('user-left', handlers.onUserLeft);
+      socketService.off('room-users-updated', handlers.onRoomUsersUpdated);
+      socketService.off('chat-message', handlers.onChatMessage);
+      socketService.off('error', handlers.onError);
+    };
+  }, []);
+
+  const authenticate = (token: string) => {
+    socketService.authenticate(token);
+  };
+
+  const joinRoom = (roomCode: string) => {
+    socketService.joinRoom(roomCode);
+  };
+
+  const leaveRoom = () => {
+    socketService.leaveRoom();
+    setCurrentRoom(null);
+    setRoomUsers([]);
+    setMessages([]);
+  };
+
+  const createRoom = (roomName?: string) => {
+    socketService.createRoom(roomName);
+  };
+
+  const sendMessage = (message: string) => {
+    socketService.sendMessage(message);
+  };
+
+  return {
+    isConnected,
+    currentRoom,
+    roomUsers,
+    messages,
+    connectionError,
+    authenticate,
+    joinRoom,
+    leaveRoom,
+    createRoom,
+    sendMessage
+  };
+};
+
+
+============================================================
+FILE: frontend/src/pages/RoomPage.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\RoomPage.tsx
+SIZE: 24845 characters
+============================================================
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { socketService } from '../services/socketService';
@@ -42,8 +572,6 @@ const RoomPage: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [gameStarted, setGameStarted] = useState(false);
   const [gameState, setGameState] = useState<any>(null);
-  const [gameCreationCalled, setGameCreationCalled] = useState(false);
-  const [teamActionInProgress, setTeamActionInProgress] = useState(false);
 
   useEffect(() => {
     if (!roomCode || connectionInitiated) {
@@ -72,32 +600,25 @@ const RoomPage: React.FC = () => {
   }, [roomCode]); // Only depend on roomCode
 
   const loadGameAndConnect = async () => {
-    console.log('🏠 [ROOMPAGE] loadGameAndConnect called for room:', roomCode);
-    console.log('🏠 [ROOMPAGE] Timestamp:', Date.now());
-    
     if (!roomCode) {
-      console.log('❌ [ROOMPAGE] No room code provided');
       setError('No room code provided');
-      console.log('🏠 [ROOMPAGE] Setting isLoading to false');
-    setIsLoading(false);
+      setIsLoading(false);
       return;
     }
 
     try {
-      console.log('🎮 [ROOMPAGE] Loading game info for room:', roomCode);
+      console.log('🎮 Loading game info for room:', roomCode);
       
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       const token = localStorage.getItem('token');
       
       if (!user.username || !token) {
         setError('Please log in first');
-        console.log('🏠 [ROOMPAGE] Setting isLoading to false');
-    setIsLoading(false);
+        setIsLoading(false);
         return;
       }
 
       // Join the game via API
-      console.log('🏠 [ROOMPAGE] Calling /api/games/join for room:', roomCode.toUpperCase());
       const joinResponse = await fetch('/api/games/join', {
         method: 'POST',
         headers: {
@@ -110,37 +631,24 @@ const RoomPage: React.FC = () => {
         })
       });
 
-      console.log('🏠 [ROOMPAGE] Join response status:', joinResponse.status);
-      console.log('🏠 [ROOMPAGE] Join response ok:', joinResponse.ok);
-
       if (!joinResponse.ok) {
-        console.log('❌ [ROOMPAGE] Join failed with status:', joinResponse.status);
         throw new Error('Failed to join game');
       }
 
       // Get game info
-      console.log('🏠 [ROOMPAGE] Fetching game info from /api/games/' + roomCode);
       const response = await fetch(`/api/games/${roomCode}`);
-      
-      console.log('🏠 [ROOMPAGE] Game info response status:', response.status);
-      console.log('🏠 [ROOMPAGE] Game info response ok:', response.ok);
       
       if (response.ok) {
         const data = await response.json();
-        console.log('🏠 [ROOMPAGE] Game info data:', data);
-        
         if (data.success) {
-          console.log('🏠 [ROOMPAGE] Setting game info and players');
           setGameInfo(data.game);
           setPlayers(data.game.players || []);
           setMessages(data.game.messages || []);
           
           // Connect to socket and set up game
-          console.log('🏠 [ROOMPAGE] Calling connectToRoom...');
           await connectToRoom(roomCode, token, user);
-          console.log('✅ [ROOMPAGE] Game info loaded and connected');
+          console.log('✅ Game info loaded:', data.game);
         } else {
-          console.log('❌ [ROOMPAGE] Game info failed:', data.error);
           throw new Error(data.error || 'Game not found');
         }
       } else if (response.status === 404) {
@@ -153,7 +661,6 @@ const RoomPage: React.FC = () => {
       setError(err.message || 'Unable to connect to game server');
     }
     
-    console.log('🏠 [ROOMPAGE] Setting isLoading to false');
     setIsLoading(false);
   };
 
@@ -176,52 +683,32 @@ const RoomPage: React.FC = () => {
       }
 
       const handleAuth = () => {
-        console.log('✅ [ROOMPAGE] handleAuth called - Socket authenticated, joining room:', gameCode);
+        console.log('✅ Socket authenticated, joining room:', gameCode);
         socketService.socket?.emit('join-game-room', gameCode);
         setIsConnected(true);
         
         // Set up game listeners after socket is ready
-        console.log('🎮 [ROOMPAGE] Setting up game listeners...');
         setupGameListeners(user);
         
         // Create or join game in the backend (only once per connection)
-        console.log('🎮 [ROOMPAGE] Creating/joining game for room:', gameCode);
-        if (!gameState && !gameCreationCalled) {
-          console.log('🎮 [ROOMPAGE] No existing game state, creating/joining game');
-          setGameCreationCalled(true);
+        console.log('🎮 Creating/joining game for room:', gameCode);
+        if (!gameState) {
+          console.log('🎮 No existing game state, creating/joining game');
           gameService.createGame(); // This will create or join existing game
         } else {
-          console.log('🎮 [ROOMPAGE] Game state already exists or creation already called, skipping');
+          console.log('🎮 Game state already exists, skipping creation');
         }
         
-        console.log('✅ [ROOMPAGE] handleAuth completed, resolving promise');
         resolve();
       };
 
       if (socketService.socket?.connected) {
-        console.log('🔐 [ROOMPAGE] Socket is connected, attempting authentication...');
-        
-        // Set up the callback first
+        socketService.authenticate(token);
         socketService.onAuthenticated((data: any) => {
-          console.log('🔐 [ROOMPAGE] onAuthenticated callback triggered with data:', data);
           if (data.success) {
-            console.log('✅ [ROOMPAGE] Authentication successful, calling handleAuth');
             handleAuth();
-          } else {
-            console.log('❌ [ROOMPAGE] Authentication failed:', data);
           }
         });
-        
-        // Try to authenticate (may be skipped if already authenticated)
-        socketService.authenticate(token);
-        
-        // Fallback: if we're already connected and authenticated, proceed directly
-        // setTimeout removed - using direct callback approach
-          if (socketService.socket?.connected && !isConnected) {
-            console.log('🔄 [ROOMPAGE] Fallback: Authentication may have been skipped, proceeding directly');
-            handleAuth();
-          }
-        
       } else {
         socketService.onConnect(() => {
           socketService.authenticate(token);
@@ -269,22 +756,16 @@ const RoomPage: React.FC = () => {
     
     // Listen for game state updates
     gameService.onGameStateUpdated((newGameState: any) => {
-      console.log('🎮 [ROOMPAGE] Game state updated in room:', newGameState);
-      console.log('🎮 [ROOMPAGE] New game status:', newGameState.status);
-      console.log('🎮 [ROOMPAGE] Current gameStarted state:', gameStarted);
-      
+      console.log('🎮 Game state updated in room:', newGameState);
       setGameState(newGameState);
       
       if (newGameState.status === 'playing') {
-        console.log('🚀 [ROOMPAGE] Game status is playing - setting gameStarted to true');
         setGameStarted(true);
-      } else {
-        console.log('🎮 [ROOMPAGE] Game status is not playing yet:', newGameState.status);
       }
       
       // Update players with team/role info from game state
       if (newGameState.players) {
-        console.log('👥 [ROOMPAGE] Updating players from game state:', newGameState.players);
+        console.log('👥 Updating players from game state:', newGameState.players);
         setPlayers(newGameState.players);
       }
     });
@@ -327,18 +808,8 @@ const RoomPage: React.FC = () => {
       return;
     }
     
-    if (teamActionInProgress) {
-      console.log('⏳ Team action already in progress, ignoring duplicate click');
-      return;
-    }
-    
-    setTeamActionInProgress(true);
-    
     // Use the game service to join team
     gameService.joinTeam(team as any, role as any);
-    
-    // Reset the flag after a delay to prevent rapid clicking
-    setTimeout(() => setTeamActionInProgress(false), 1000);
   };
 
   const handleStartGame = () => {
@@ -351,10 +822,8 @@ const RoomPage: React.FC = () => {
   };
 
   const handleGoToGame = () => {
-    console.log('🎮 [ROOMPAGE] handleGoToGame called - navigating to game board...');
-    console.log('🎮 [ROOMPAGE] Current gameState:', gameState);
+    console.log('🎮 Navigating to game board...');
     navigate('/game');
-    console.log('🎮 [ROOMPAGE] Navigation to /game called');
   };
 
   const canStartGame = () => {
@@ -426,7 +895,6 @@ const RoomPage: React.FC = () => {
   }
 
   if (gameStarted) {
-    console.log('🎉 [ROOMPAGE] Rendering game started screen');
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center bg-white p-8 rounded-lg shadow border border-gray-200 max-w-md">
@@ -470,12 +938,10 @@ const RoomPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Enhanced Debug Info */}
+        {/* Debug Info */}
         <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded p-3 text-xs">
           <strong>🔍 Debug:</strong> Connected: {isConnected ? 'Yes' : 'No'} | 
           Game State: {gameState ? 'Loaded' : 'None'} | 
-          Game Status: {gameState?.status || 'Unknown'} |
-          Game Started: {gameStarted ? 'Yes' : 'No'} |
           Game Players: {gameState?.players?.length || 0} | 
           Room Players: {players.length} | 
           User: {currentUser?.username} | 
@@ -701,3 +1167,8 @@ const RoomPage: React.FC = () => {
 };
 
 export default RoomPage;
+
+
+================================================================================
+END OF COMBINED FILES
+================================================================================

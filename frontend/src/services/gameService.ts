@@ -9,7 +9,9 @@ class GameService {
   }
 
   startGame(): void {
+    console.log('🚀 [GAMESERVICE] Emitting game:start event to backend');
     socketService.socket?.emit('game:start');
+    console.log('🚀 [GAMESERVICE] game:start event emitted');
   }
 
   resetGame(): void {
@@ -48,7 +50,16 @@ class GameService {
 
   // Event listeners for game events
   onGameStateUpdated(callback: (game: CodenamesGame) => void): void {
-    socketService.socket?.on('game:state-updated', callback);
+    console.log('🎮 [GAMESERVICE] Registering game:state-updated listener');
+    
+    const wrappedCallback = (game: CodenamesGame) => {
+      console.log('🎮 [GAMESERVICE] game:state-updated event received:', game);
+      console.log('🎮 [GAMESERVICE] Game status in event:', game.status);
+      console.log('🎮 [GAMESERVICE] Game players count:', game.players?.length);
+      callback(game);
+    };
+    
+    socketService.socket?.on('game:state-updated', wrappedCallback);
   }
 
   onPlayerJoined(callback: (player: GamePlayer) => void): void {

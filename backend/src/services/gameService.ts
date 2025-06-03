@@ -262,16 +262,33 @@ export class GameService {
 
   // Game actions
   startGame(playerId: string): { success: boolean; error?: string } {
+    console.log('🎯 [GAMESERVICE] startGame called for player:', playerId);
+    
     const game = this.getGameByPlayer(playerId);
+    console.log('🎯 [GAMESERVICE] Game found for player:', !!game);
+    
     if (!game) {
+      console.log('❌ [GAMESERVICE] Player not in any game');
+      // Log current player-game mappings for debugging
+      console.log('🎯 [GAMESERVICE] Current player mappings:');
+      for (const [pid, gid] of this.playerGameMap.entries()) {
+        console.log(`  Player ${pid} -> Game ${gid}`);
+      }
       return { success: false, error: 'Player not in any game' };
     }
 
-    if (!game.canStartGame()) {
-      return { success: false, error: 'Cannot start game - need both teams with spymasters and operatives' };
+    console.log('🎯 [GAMESERVICE] Checking if game can start...');
+    const canStart = game.canStartGame();
+    console.log('🎯 [GAMESERVICE] Can start result:', canStart);
+    
+    if (!canStart) {
+      return { success: false, error: 'Cannot start game - need players on both teams' };
     }
 
+    console.log('🎯 [GAMESERVICE] Starting game...');
     const success = game.startGame();
+    console.log('🎯 [GAMESERVICE] Start game result:', success);
+    
     return { success, error: success ? undefined : 'Failed to start game' };
   }
 

@@ -269,7 +269,9 @@ const HomePage: React.FC = () => {
       
       if (data.success) {
         console.log('🎉 Navigating to room:', gameCode);
+        console.log('🎮 [HOMEPAGE] Navigating to room:', gameCode);
         navigate(`/room/${gameCode}`);
+        console.log('🎮 [HOMEPAGE] Navigation called');
       } else {
         setError(data.error || 'Failed to join game');
       }

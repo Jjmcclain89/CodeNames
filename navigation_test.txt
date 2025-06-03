@@ -1,0 +1,10 @@
+// Simple navigation test - add this to HomePage.tsx temporarily
+const testNavigation = () => {
+  console.log('🧪 Testing navigation to /room/TEST123');
+  navigate('/room/TEST123');
+};
+
+// Add this button to your HomePage for testing:
+// <button onClick={testNavigation} className="bg-purple-500 text-white px-4 py-2 rounded">
+//   Test Navigation to Room
+// </button>
