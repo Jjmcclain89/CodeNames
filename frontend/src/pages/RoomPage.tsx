@@ -40,9 +40,10 @@ const RoomPage: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [gameStarted, setGameStarted] = useState(false);
+  // gameStarted state removed - now navigating directly to game
   const [gameState, setGameState] = useState<any>(null);
   const [gameCreationCalled, setGameCreationCalled] = useState(false);
+  const [gameNavigated, setGameNavigated] = useState(false);
   const [teamActionInProgress, setTeamActionInProgress] = useState(false);
 
   useEffect(() => {
@@ -271,13 +272,16 @@ const RoomPage: React.FC = () => {
     gameService.onGameStateUpdated((newGameState: any) => {
       console.log('🎮 [ROOMPAGE] Game state updated in room:', newGameState);
       console.log('🎮 [ROOMPAGE] New game status:', newGameState.status);
-      console.log('🎮 [ROOMPAGE] Current gameStarted state:', gameStarted);
+// gameStarted debug logging removed
       
       setGameState(newGameState);
       
-      if (newGameState.status === 'playing') {
-        console.log('🚀 [ROOMPAGE] Game status is playing - setting gameStarted to true');
-        setGameStarted(true);
+      if (newGameState.status === 'playing' && !gameNavigated) {
+        console.log('🚀 [ROOMPAGE] Game status is playing - navigating directly to game');
+        console.log('🎮 [ROOMPAGE] Automatic navigation to /game');
+        setGameNavigated(true);
+        navigate('/game');
+        return; // Exit early since we're navigating away
       } else {
         console.log('🎮 [ROOMPAGE] Game status is not playing yet:', newGameState.status);
       }
@@ -350,12 +354,7 @@ const RoomPage: React.FC = () => {
     gameService.startGame();
   };
 
-  const handleGoToGame = () => {
-    console.log('🎮 [ROOMPAGE] handleGoToGame called - navigating to game board...');
-    console.log('🎮 [ROOMPAGE] Current gameState:', gameState);
-    navigate('/game');
-    console.log('🎮 [ROOMPAGE] Navigation to /game called');
-  };
+// handleGoToGame function removed - using direct navigation
 
   const canStartGame = () => {
     if (!gameState || !gameState.players) return false;
@@ -425,26 +424,7 @@ const RoomPage: React.FC = () => {
     );
   }
 
-  if (gameStarted) {
-    console.log('🎉 [ROOMPAGE] Rendering game started screen');
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-lg shadow border border-gray-200 max-w-md">
-          <div className="text-green-600 text-xl mb-4">🎉 Game Started!</div>
-          <div className="text-gray-600 mb-6">
-            <p>The Codenames game has begun.</p>
-            <p className="mt-2 text-sm">Click below to join the game board.</p>
-          </div>
-          <button 
-            onClick={handleGoToGame}
-            className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded text-lg font-semibold"
-          >
-            🎮 Join Game Board
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Intermediate "Game Started" screen removed - now navigating directly to /game
 
   const userPlayer = getCurrentUserPlayer();
 
@@ -475,7 +455,6 @@ const RoomPage: React.FC = () => {
           <strong>🔍 Debug:</strong> Connected: {isConnected ? 'Yes' : 'No'} | 
           Game State: {gameState ? 'Loaded' : 'None'} | 
           Game Status: {gameState?.status || 'Unknown'} |
-          Game Started: {gameStarted ? 'Yes' : 'No'} |
           Game Players: {gameState?.players?.length || 0} | 
           Room Players: {players.length} | 
           User: {currentUser?.username} | 
