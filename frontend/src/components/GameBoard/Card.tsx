@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CodeCard, TeamColor } from '../../types/game';
 
 interface CardProps {
@@ -25,16 +25,16 @@ const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolea
         return 'bg-gray-300 text-gray-800 border-gray-400';
     }
   } else if (isSpymaster) {
-    // Spymasters can see the true colors with subtle hints
+    // ✅ Spymasters can see the true colors clearly (more obvious than before)
     switch (team) {
       case 'red':
-        return 'bg-red-50 border-red-300 text-red-800 hover:bg-red-100';
+        return 'bg-red-200 border-red-500 text-red-900 hover:bg-red-300 shadow-md';
       case 'blue':
-        return 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100';
+        return 'bg-blue-200 border-blue-500 text-blue-900 hover:bg-blue-300 shadow-md';
       case 'neutral':
-        return 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100';
+        return 'bg-gray-200 border-gray-500 text-gray-800 hover:bg-gray-300 shadow-md';
       case 'assassin':
-        return 'bg-gray-800 border-gray-900 text-white hover:bg-gray-700';
+        return 'bg-gray-900 border-black text-red-400 hover:bg-black shadow-lg font-bold';
       default:
         return 'bg-white border-gray-300 text-gray-800 hover:bg-gray-100';
     }
@@ -61,10 +61,24 @@ export const Card: React.FC<CardProps> = ({
   disabled = false,
   className = ''
 }) => {
+  const [showSubmit, setShowSubmit] = useState(false);
+
   const handleClick = () => {
     if (!disabled && onClick && !card.isRevealed) {
-      onClick(card.id);
+      // ✅ Show submit button inside the card
+      setShowSubmit(true);
     }
+  };
+
+  const handleSubmit = () => {
+    if (onClick) {
+      onClick(card.id);
+      setShowSubmit(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setShowSubmit(false);
   };
 
   const colors = getCardColors(card.team, card.isRevealed, isSpymaster);
@@ -78,6 +92,7 @@ export const Card: React.FC<CardProps> = ({
         ${colors}
         ${clickable ? 'cursor-pointer transform hover:scale-105 active:scale-95' : 'cursor-default'}
         ${disabled ? 'opacity-50' : ''}
+        ${showSubmit ? 'ring-4 ring-blue-400 ring-opacity-50' : ''}
         ${className}
       `}
       onClick={handleClick}
@@ -90,25 +105,51 @@ export const Card: React.FC<CardProps> = ({
         }
       }}
     >
-      {/* Word */}
-      <span className="font-semibold text-xs sm:text-sm leading-tight break-words">
-        {card.word.replace(/_/g, ' ')}
-      </span>
+      {/* Word - hidden when submit buttons are shown */}
+      {!showSubmit && (
+        <span className="font-semibold text-xs sm:text-sm leading-tight break-words">
+          {card.word.replace(/_/g, ' ')}
+        </span>
+      )}
+
+      {/* ✅ Submit/Cancel buttons - shown when card is clicked */}
+      {showSubmit && !card.isRevealed && (
+        <div className="flex flex-col gap-2 w-full">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSubmit();
+            }}
+            className="bg-green-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-green-600 transition-colors"
+          >
+            ✓ GUESS
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCancel();
+            }}
+            className="bg-gray-500 text-white px-2 py-1 rounded text-xs hover:bg-gray-600 transition-colors"
+          >
+            ✗ Cancel
+          </button>
+        </div>
+      )}
 
       {/* Revealed indicator */}
       {card.isRevealed && (
         <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-75" />
       )}
 
-      {/* Spymaster team indicator (only for unrevealed cards) */}
-      {isSpymaster && !card.isRevealed && (
-        <div className="absolute bottom-1 left-1 text-xs opacity-70">
+      {/* ✅ Spymaster team indicator (only for unrevealed cards) - More visible */}
+      {isSpymaster && !card.isRevealed && !showSubmit && (
+        <div className="absolute bottom-1 left-1 text-lg opacity-90 bg-white rounded-full p-1 shadow-sm">
           {getTeamEmoji(card.team)}
         </div>
       )}
 
       {/* Position indicator for debugging (can be removed) */}
-      {process.env.NODE_ENV === 'development' && (
+      {process.env.NODE_ENV === 'development' && !showSubmit && (
         <div className="absolute top-0 left-0 text-xs opacity-30 bg-black text-white px-1 rounded-br">
           {card.position}
         </div>

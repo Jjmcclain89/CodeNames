@@ -5,13 +5,23 @@ export class CodenamesGameModel {
   private game: CodenamesGame;
 
   constructor(roomCode: string, config: GameConfig = GAME_CONFIG.STANDARD_SETUP) {
+    const board = this.generateBoard(config);
+    
+    // ✅ Count red vs blue cards to determine starting team
+    const redCardCount = board.filter(card => card.team === 'red').length;
+    const blueCardCount = board.filter(card => card.team === 'blue').length;
+    const startingTeam: TeamColor = redCardCount > blueCardCount ? 'red' : 'blue';
+    
+    console.log(`🎯 Game Setup: Red ${redCardCount} cards, Blue ${blueCardCount} cards`);
+    console.log(`🚀 Starting team: ${startingTeam} (has more words to guess)`);
+
     this.game = {
       id: this.generateGameId(),
       roomCode,
       status: 'waiting',
-      currentTurn: 'red', // Red team always starts
+      currentTurn: startingTeam, // ✅ Team with more words goes first
       players: [],
-      board: this.generateBoard(config),
+      board,
       guessesRemaining: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

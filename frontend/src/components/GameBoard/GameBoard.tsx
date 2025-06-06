@@ -61,13 +61,24 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
             🕵️ Codenames 🔍
           </h1>
-          {/* Debug Info */}
+          {/* ✅ Enhanced Debug Info */}
           <div className="bg-gray-100 border rounded-lg p-4 mb-6 text-sm">
             <h4 className="font-semibold mb-2">🔍 Debug Info:</h4>
             <div>Game Status: <span className="font-mono">{gameState.status}</span></div>
+            <div>Current Turn: <span className="font-mono">{gameState.currentTurn}</span></div>
             <div>Player Count: <span className="font-mono">{gameState.players.length}</span></div>
             <div>Current Player: <span className="font-mono">{currentPlayer?.username || 'None'}</span></div>
-            <div>Players: <span className="font-mono">{gameState.players.map(p => p.username).join(', ')}</span></div>
+            <div>Current Player Team: <span className="font-mono">{currentPlayer?.team || 'None'}</span></div>
+            <div>Current Player Role: <span className="font-mono">{currentPlayer?.role || 'None'}</span></div>
+            <div>Is My Turn: <span className="font-mono">{isMyTurn ? 'YES' : 'NO'}</span></div>
+            <div>Can Give Clue: <span className="font-mono">{canGiveClue ? 'YES' : 'NO'}</span></div>
+            <div>Can Reveal Card: <span className="font-mono">{canRevealCard ? 'YES' : 'NO'}</span></div>
+            <div>Socket User ID: <span className="font-mono">{(window as any).socketService?.socket?.userId || 'None'}</span></div>
+            <div>Players: {gameState.players.map((p: any) => (
+              <div key={p.id} className="ml-4">
+                {p.username} (ID: {p.id}) - {p.team}/{p.role}
+              </div>
+            ))}</div>
           </div>
 
           
@@ -307,6 +318,29 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               </div>
             </div>
           )}
+
+          {/* ✅ Turn Indicator - Clear message for current player */}
+          {gameState.status === 'playing' && currentPlayer && isMyTurn && (
+            <div className={`mt-4 p-4 border-2 rounded-lg text-center ${
+              currentPlayer.team === 'red' ? 'bg-red-100 border-red-400' : 'bg-blue-100 border-blue-400'
+            }`}>
+              <div className="text-2xl font-bold mb-2">
+                🎯 IT'S YOUR TURN!
+              </div>
+              <div className="text-lg">
+                {canGiveClue && (
+                  <span className="text-green-700 font-semibold">
+                    💡 Give a clue to your team below ⬇️
+                  </span>
+                )}
+                {canRevealCard && (
+                  <span className="text-blue-700 font-semibold">
+                    🎯 Click a card to guess! ({gameState.guessesRemaining} guesses left)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Game Controls */}
@@ -363,9 +397,18 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               </div>
             )}
 
-            {!isMyTurn && (
-              <div className="text-center text-lg text-gray-600">
-                ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn} team's turn...
+            {!isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
+              <div className="text-center p-4 bg-gray-100 rounded-lg">
+                <div className="text-lg text-gray-600 mb-2">
+                  ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn} team's turn...
+                </div>
+                <div className="text-sm text-gray-500">
+                  {gameState.currentClue ? (
+                    `${gameState.currentTurn} operatives are guessing (${gameState.guessesRemaining} guesses left)`
+                  ) : (
+                    `Waiting for ${gameState.currentTurn} spymaster to give a clue`
+                  )}
+                </div>
               </div>
             )}
           </div>

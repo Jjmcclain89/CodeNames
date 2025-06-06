@@ -32,6 +32,7 @@ const GamePage: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [teamActionInProgress, setTeamActionInProgress] = useState(false);
+  const [reconnectionStatus, setReconnectionStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!gameCode || connectionInitiated) {
@@ -57,6 +58,43 @@ const GamePage: React.FC = () => {
       setConnectionInitiated(false);
     };
   }, [gameCode]);
+
+
+  // ✅ Auto-rejoin team if we got disconnected and lost team assignment
+  const checkAndAutoRejoinTeam = (gameState: any) => {
+    if (!gameState || !gameCode) return;
+    
+    const currentPlayer = getCurrentUserPlayer();
+    const storedAssignment = localStorage.getItem('lastTeamAssignment');
+    
+    if (storedAssignment) {
+      try {
+        const assignment = JSON.parse(storedAssignment);
+        const isForThisGame = assignment.gameCode === gameCode.toUpperCase();
+        const isRecent = (Date.now() - assignment.timestamp) < 30 * 60 * 1000; // 30 minutes
+        
+        if (isForThisGame && isRecent) {
+          // Check if we're missing from our team or assigned as neutral
+          const shouldBeOnTeam = assignment.team;
+          const shouldBeRole = assignment.role;
+          
+          if (!currentPlayer || currentPlayer.team === 'neutral' || currentPlayer.team !== shouldBeOnTeam) {
+            console.log('🔄 Detected team assignment loss - auto-rejoining...');
+            console.log('🔄 Should be:', shouldBeOnTeam, shouldBeRole);
+            console.log('🔄 Currently:', currentPlayer?.team || 'not found', currentPlayer?.role || 'not found');
+            
+            // Auto-rejoin the team
+            setTimeout(() => {
+              console.log('🔄 Auto-rejoining team:', shouldBeOnTeam, shouldBeRole);
+              handleJoinTeam(shouldBeOnTeam, shouldBeRole);
+            }, 1000);
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing stored team assignment:', e);
+      }
+    }
+  };
 
   const loadGameAndConnect = async () => {
     console.log('🏠 [GAMEPAGE] loadGameAndConnect called for game:', gameCode);
@@ -203,6 +241,9 @@ const GamePage: React.FC = () => {
       console.log('🎮 [GAMEPAGE] Game state updated:', newGameState);
       setGameState(newGameState);
       setIsLoading(false);
+      
+      // ✅ Auto-rejoin temporarily disabled
+      // checkAndAutoRejoinTeam(newGameState);
     });
 
     gameService.onGameError((error: string) => {
@@ -210,6 +251,33 @@ const GamePage: React.FC = () => {
       setError(error);
       setTimeout(() => setError(''), 3000);
     });
+    
+    // ✅ Add specific game action listeners
+    if (socketService.socket) {
+      // Listen for clue given events
+      socketService.socket.on('game:clue-given', (clue: any) => {
+        console.log('💡 Clue given event received:', clue);
+        // Game state should update automatically, but we can show a toast
+      });
+      
+      // Listen for card revealed events
+      socketService.socket.on('game:card-revealed', (card: any) => {
+        console.log('🎯 Card revealed event received:', card);
+        // Game state should update automatically
+      });
+      
+      // Listen for turn changed events
+      socketService.socket.on('game:turn-changed', (newTurn: string) => {
+        console.log('⏭️ Turn changed event received:', newTurn);
+        // Game state should update automatically
+      });
+      
+      // Listen for game ended events
+      socketService.socket.on('game:game-ended', (winner: string) => {
+        console.log('🏆 Game ended event received, winner:', winner);
+        // Could show a victory modal here
+      });
+    }
   };
 
   const sendMessage = () => {
@@ -231,23 +299,56 @@ const GamePage: React.FC = () => {
     }
   };
 
+  // ✅ Simple, reliable team join function
   const handleJoinTeam = (team: string, role: string) => {
     console.log(`👥 Attempting to join ${team} team as ${role}`);
     
-    if (!isConnected) {
-      setError('Not connected to server');
-      return;
-    }
-    
+    // Basic checks
     if (teamActionInProgress) {
+      console.log('⏳ Team action already in progress');
       return;
     }
     
     setTeamActionInProgress(true);
-    gameService.joinTeam(team as any, role as any);
+    setError('');
     
-    setTimeout(() => setTeamActionInProgress(false), 1000);
+    try {
+      // Store team assignment for potential recovery
+      const teamAssignment = { team, role, gameCode: gameCode?.toUpperCase(), timestamp: Date.now() };
+      localStorage.setItem('lastTeamAssignment', JSON.stringify(teamAssignment));
+      console.log('💾 Stored team assignment:', teamAssignment);
+      
+      // Simple socket check and emit
+      if (socketService && socketService.socket) {
+        if (!socketService.socket.connected) {
+          console.log('🔌 Socket not connected, trying to connect...');
+          const token = localStorage.getItem('token');
+          if (token) {
+            socketService.connect();
+            socketService.authenticate(token);
+          }
+        }
+        
+        // Emit the event regardless - let the backend handle it
+        console.log('📡 Emitting game:join-team event');
+        socketService.socket.emit('game:join-team', team, role);
+        
+      } else {
+        throw new Error('Socket service not available');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in team join:', error);
+      setError('Failed to join team - please refresh page');
+    }
+    
+    // Reset action flag after a short delay
+    const timeoutId = setTimeout(() => {
+      setTeamActionInProgress(false);
+      clearTimeout(timeoutId);
+    }, 2000);
   };
+
 
   const handleStartGame = () => {
     console.log('🚀 Starting Codenames game...');
@@ -269,7 +370,38 @@ const GamePage: React.FC = () => {
 
   const getCurrentUserPlayer = () => {
     if (!gameState || !gameState.players) return null;
-    return gameState.players.find((p: any) => p.username === currentUser?.username);
+    
+    // ✅ Enhanced player matching with debug logging
+    console.log('🔍 Finding current user player...');
+    console.log('🔍 Current user:', currentUser);
+    console.log('🔍 Game players:', gameState.players.map(p => ({ id: p.id, username: p.username })));
+    
+    // Try multiple matching strategies
+    let player = null;
+    
+    // Strategy 1: Match by username (original)
+    player = gameState.players.find((p: any) => p.username === currentUser?.username);
+    if (player) {
+      console.log('✅ Found player by username:', player.username);
+      return player;
+    }
+    
+    // Strategy 2: Match by user ID
+    player = gameState.players.find((p: any) => p.id === currentUser?.id);
+    if (player) {
+      console.log('✅ Found player by user ID:', player.username);
+      return player;
+    }
+    
+    // Strategy 3: Check if there's only one real player (not test players)
+    const realPlayers = gameState.players.filter((p: any) => !p.id.startsWith('test_'));
+    if (realPlayers.length === 1) {
+      console.log('✅ Found single real player:', realPlayers[0].username);
+      return realPlayers[0];
+    }
+    
+    console.log('❌ No matching player found');
+    return null;
   };
 
   const getTeamPlayers = (team: string) => {
@@ -620,8 +752,119 @@ const GamePage: React.FC = () => {
 
         {/* Game Board */}
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold mb-4">Game Board</h2>
-          {gameState.board && <GameBoard gameState={gameState} currentUser={currentUser} />}
+          {/* ✅ Clean Turn Indicator - Shows specific player's turn */}
+          {(() => {
+            const currentPlayer = getCurrentUserPlayer();
+            const isMyTurn = currentPlayer && currentPlayer.team === gameState.currentTurn;
+            const isSpymaster = currentPlayer && currentPlayer.role === 'spymaster';
+            const canGiveClue = isMyTurn && isSpymaster && !gameState.currentClue;
+            const canGuess = isMyTurn && !isSpymaster && gameState.currentClue && gameState.guessesRemaining > 0;
+            
+            // Find who should be acting right now
+            let activePlayer = null;
+            if (!gameState.currentClue) {
+              // Need spymaster to give clue
+              activePlayer = gameState.players.find(p => p.team === gameState.currentTurn && p.role === 'spymaster');
+            } else if (gameState.guessesRemaining > 0) {
+              // Operatives should be guessing - could be any operative on current team
+              const operatives = gameState.players.filter(p => p.team === gameState.currentTurn && p.role === 'operative');
+              activePlayer = operatives[0]; // For now, just show first operative
+            }
+            
+            return (
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Game Board</h2>
+                <div className="text-sm text-gray-600">
+                  {activePlayer ? (
+                    <span>
+                      <span className={`font-medium ${activePlayer.team === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
+                        {activePlayer.username}
+                      </span>
+                      <span className="text-gray-500 ml-1">
+                        ({activePlayer.team} {activePlayer.role})
+                      </span>
+                      {isMyTurn && <span className="ml-2 text-blue-600 font-medium">← Your turn</span>}
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">Game in progress</span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          
+          {/* ✅ Reconnection Status */}
+          {reconnectionStatus && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-center">
+              <div className="flex items-center justify-center space-x-2">
+                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <span className="text-blue-700 font-medium">{reconnectionStatus}</span>
+              </div>
+            </div>
+          )}
+          
+          {/* Current Clue Display */}
+          {gameState.currentClue && (
+            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+              <span className="text-lg font-semibold text-gray-700">💡 Current Clue: </span>
+              <span className="text-2xl font-bold text-yellow-700">
+                {gameState.currentClue.word} ({gameState.currentClue.number})
+              </span>
+            </div>
+          )}
+          
+          {gameState.board && (
+            <GameBoard 
+              gameState={gameState} 
+              currentPlayer={getCurrentUserPlayer()}
+              onCardClick={(cardId) => {
+                console.log('🎯 Card clicked:', cardId);
+                if (!isConnected) {
+                  setError('Not connected to server');
+                  return;
+                }
+                // ✅ Emit socket event for card reveal
+                console.log('🎯 Emitting game:reveal-card event');
+                socketService.socket?.emit('game:reveal-card', cardId);
+              }}
+              onGiveClue={(word, number) => {
+                console.log('💡 Clue given:', word, number);
+                if (!isConnected) {
+                  setError('Not connected to server');
+                  return;
+                }
+                if (!word.trim()) {
+                  setError('Please enter a clue word');
+                  return;
+                }
+                if (number < 1 || number > 9) {
+                  setError('Number must be between 1 and 9');
+                  return;
+                }
+                // ✅ Emit socket event for giving clue
+                console.log('💡 Emitting game:give-clue event');
+                socketService.socket?.emit('game:give-clue', { word: word.trim(), number });
+              }}
+              onEndTurn={() => {
+                console.log('⏭️ End turn');
+                if (!isConnected) {
+                  setError('Not connected to server');
+                  return;
+                }
+                // ✅ Emit socket event for ending turn
+                console.log('⏭️ Emitting game:end-turn event');
+                socketService.socket?.emit('game:end-turn');
+              }}
+              onStartGame={() => {
+                console.log('🚀 Start game');
+                handleStartGame();
+              }}
+              onJoinTeam={(team, role) => {
+                console.log('👥 Join team:', team, role);
+                handleJoinTeam(team, role);
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
