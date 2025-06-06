@@ -12,9 +12,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: '0.0.0.0',  // Bind to all network interfaces for mobile access
     proxy: {
+      // Mobile API routing: /api/* requests get proxied to backend
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://192.168.86.138:3001',  // Use local IP for mobile devices
         changeOrigin: true,
         secure: false,
       }

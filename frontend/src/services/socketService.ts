@@ -76,6 +76,8 @@ class SocketService {
 
     const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
     console.log('📡 Connecting to socket server:', socketUrl);
+    console.log('📱 Environment VITE_SOCKET_URL:', import.meta.env.VITE_SOCKET_URL);
+    console.log('📱 User agent:', navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop');
 
     this._socket = io(socketUrl, {
       autoConnect: false,

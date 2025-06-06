@@ -14,9 +14,16 @@ console.log('🚀 Starting Codenames backend server...');
 const app = express();
 const server = createServer(app);
 
-// CORS configuration
+// CORS configuration for mobile access
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: [
+    "http://localhost:5173",
+    process.env.FRONTEND_URL || "http://localhost:5173",
+    // Allow any IP on local network for mobile testing
+    /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:5173$/,
+    /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:5173$/,
+    /^http:\/\/172\.16\.\d{1,3}\.\d{1,3}:5173$/
+  ],
   methods: ["GET", "POST"],
   credentials: true
 };
@@ -776,12 +783,13 @@ app.use((err: any, req: Request, res: Response, next: NextFunction): void => {
 // START SERVER
 // ========================================
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
-server.listen(PORT, () => {
+server.listen(Number(PORT), '0.0.0.0', () => {
   console.log('');
   console.log('🎉 ================================');
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📱 Mobile access: http://192.168.86.138:${PORT}`);
   console.log('📡 Socket.io with enhanced auth debugging');
   console.log(`🔗 API endpoints: http://localhost:${PORT}/api`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
