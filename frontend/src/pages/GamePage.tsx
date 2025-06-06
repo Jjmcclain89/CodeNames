@@ -414,41 +414,43 @@ const GamePage: React.FC = () => {
     return teamPlayers.some((p: any) => p.role === 'spymaster');
   };
 
+  // Loading State
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-xl text-gray-900 mb-4">Loading Codenames Game...</div>
-          <div className="text-gray-600">Game Code: {gameCode}</div>
-          <div className="mt-4">
-            <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="text-2xl font-bold text-gray-900 mb-4">🕵️ Loading Codenames Game...</div>
+          <div className="text-gray-600 mb-6">Game Code: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{gameCode}</span></div>
+          <div className="flex justify-center">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
           </div>
         </div>
       </div>
     );
   }
 
+  // Error State
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-lg shadow border border-gray-200 max-w-md">
-          <div className="text-red-600 text-xl mb-4">Game Error</div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
+          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Game Error</div>
           <div className="text-gray-600 mb-6">
-            <p>Game Code: <strong>{gameCode}</strong></p>
-            <p className="mt-2 text-sm">{error}</p>
+            <p>Game Code: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{gameCode}</span></p>
+            <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
           </div>
           <div className="space-y-3">
             <button 
               onClick={() => navigate('/')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
             >
-              Go Back to Home
+              🏠 Go Back to Home
             </button>
             <button 
               onClick={() => window.location.reload()}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded"
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
             >
-              Try Again
+              🔄 Try Again
             </button>
           </div>
         </div>
@@ -697,175 +699,62 @@ const GamePage: React.FC = () => {
     );
   }
 
-  // Show actual game board if game is playing
+  // Main Game - All UI handled by GameBoard component
+  if (gameState) {
+    return (
+      <GameBoard 
+        gameState={gameState} 
+        currentPlayer={getCurrentUserPlayer()}
+        onCardClick={(cardId) => {
+          console.log('🎯 Card clicked:', cardId);
+          if (!isConnected) {
+            setError('Not connected to server');
+            return;
+          }
+          console.log('🎯 Emitting game:reveal-card event');
+          socketService.socket?.emit('game:reveal-card', cardId);
+        }}
+        onGiveClue={(word, number) => {
+          console.log('💡 Clue given:', word, number);
+          if (!isConnected) {
+            setError('Not connected to server');
+            return;
+          }
+          if (!word.trim()) {
+            setError('Please enter a clue word');
+            return;
+          }
+          if (number < 1 || number > 9) {
+            setError('Number must be between 1 and 9');
+            return;
+          }
+          console.log('💡 Emitting game:give-clue event');
+          socketService.socket?.emit('game:give-clue', { word: word.trim(), number });
+        }}
+        onEndTurn={() => {
+          console.log('⏭️ End turn');
+          if (!isConnected) {
+            setError('Not connected to server');
+            return;
+          }
+          console.log('⏭️ Emitting game:end-turn event');
+          socketService.socket?.emit('game:end-turn');
+        }}
+        onStartGame={handleStartGame}
+        onJoinTeam={(team, role) => {
+          console.log('👥 Join team:', team, role);
+          handleJoinTeam(team, role);
+        }}
+      />
+    );
+  }
+
+  // Fallback loading state
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Codenames Game</h1>
-            <div className="text-sm text-gray-600">
-              Game: {gameCode} | Current Turn: {gameState.currentTurn} team
-            </div>
-          </div>
-          <div className="flex space-x-3">
-            <button
-              onClick={() => navigate('/')}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded text-sm"
-            >
-              Back to Home
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto p-6">
-        {/* Game Status */}
-        <div className="mb-6 bg-white rounded-lg shadow p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Game Status</h2>
-            <div className="text-sm text-gray-600">
-              Status: <span className="font-semibold text-green-600">{gameState.status}</span>
-            </div>
-          </div>
-          
-          {/* Players */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-red-50 border border-red-200 rounded p-3">
-              <h3 className="font-semibold text-red-700 mb-2">🔴 Red Team</h3>
-              {gameState.players.filter((p: any) => p.team === 'red').map((player: any) => (
-                <div key={player.id} className="text-sm">
-                  {player.username} ({player.role})
-                </div>
-              ))}
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded p-3">
-              <h3 className="font-semibold text-blue-700 mb-2">🔵 Blue Team</h3>
-              {gameState.players.filter((p: any) => p.team === 'blue').map((player: any) => (
-                <div key={player.id} className="text-sm">
-                  {player.username} ({player.role})
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Game Board */}
-        <div className="bg-white rounded-lg shadow p-6">
-          {/* ✅ Clean Turn Indicator - Shows specific player's turn */}
-          {(() => {
-            const currentPlayer = getCurrentUserPlayer();
-            const isMyTurn = currentPlayer && currentPlayer.team === gameState.currentTurn;
-            const isSpymaster = currentPlayer && currentPlayer.role === 'spymaster';
-            const canGiveClue = isMyTurn && isSpymaster && !gameState.currentClue;
-            const canGuess = isMyTurn && !isSpymaster && gameState.currentClue && gameState.guessesRemaining > 0;
-            
-            // Find who should be acting right now
-            let activePlayer = null;
-            if (!gameState.currentClue) {
-              // Need spymaster to give clue
-              activePlayer = gameState.players.find(p => p.team === gameState.currentTurn && p.role === 'spymaster');
-            } else if (gameState.guessesRemaining > 0) {
-              // Operatives should be guessing - could be any operative on current team
-              const operatives = gameState.players.filter(p => p.team === gameState.currentTurn && p.role === 'operative');
-              activePlayer = operatives[0]; // For now, just show first operative
-            }
-            
-            return (
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Game Board</h2>
-                <div className="text-sm text-gray-600">
-                  {activePlayer ? (
-                    <span>
-                      <span className={`font-medium ${activePlayer.team === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
-                        {activePlayer.username}
-                      </span>
-                      <span className="text-gray-500 ml-1">
-                        ({activePlayer.team} {activePlayer.role})
-                      </span>
-                      {isMyTurn && <span className="ml-2 text-blue-600 font-medium">← Your turn</span>}
-                    </span>
-                  ) : (
-                    <span className="text-gray-500">Game in progress</span>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-          
-          {/* ✅ Reconnection Status */}
-          {reconnectionStatus && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-center">
-              <div className="flex items-center justify-center space-x-2">
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-blue-700 font-medium">{reconnectionStatus}</span>
-              </div>
-            </div>
-          )}
-          
-          {/* Current Clue Display */}
-          {gameState.currentClue && (
-            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
-              <span className="text-lg font-semibold text-gray-700">💡 Current Clue: </span>
-              <span className="text-2xl font-bold text-yellow-700">
-                {gameState.currentClue.word} ({gameState.currentClue.number})
-              </span>
-            </div>
-          )}
-          
-          {gameState.board && (
-            <GameBoard 
-              gameState={gameState} 
-              currentPlayer={getCurrentUserPlayer()}
-              onCardClick={(cardId) => {
-                console.log('🎯 Card clicked:', cardId);
-                if (!isConnected) {
-                  setError('Not connected to server');
-                  return;
-                }
-                // ✅ Emit socket event for card reveal
-                console.log('🎯 Emitting game:reveal-card event');
-                socketService.socket?.emit('game:reveal-card', cardId);
-              }}
-              onGiveClue={(word, number) => {
-                console.log('💡 Clue given:', word, number);
-                if (!isConnected) {
-                  setError('Not connected to server');
-                  return;
-                }
-                if (!word.trim()) {
-                  setError('Please enter a clue word');
-                  return;
-                }
-                if (number < 1 || number > 9) {
-                  setError('Number must be between 1 and 9');
-                  return;
-                }
-                // ✅ Emit socket event for giving clue
-                console.log('💡 Emitting game:give-clue event');
-                socketService.socket?.emit('game:give-clue', { word: word.trim(), number });
-              }}
-              onEndTurn={() => {
-                console.log('⏭️ End turn');
-                if (!isConnected) {
-                  setError('Not connected to server');
-                  return;
-                }
-                // ✅ Emit socket event for ending turn
-                console.log('⏭️ Emitting game:end-turn event');
-                socketService.socket?.emit('game:end-turn');
-              }}
-              onStartGame={() => {
-                console.log('🚀 Start game');
-                handleStartGame();
-              }}
-              onJoinTeam={(team, role) => {
-                console.log('👥 Join team:', team, role);
-                handleJoinTeam(team, role);
-              }}
-            />
-          )}
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-xl text-gray-900 mb-4">🔌 Connecting to game...</div>
+        <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
       </div>
     </div>
   );

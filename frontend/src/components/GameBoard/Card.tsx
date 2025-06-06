@@ -11,36 +11,36 @@ interface CardProps {
 
 const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolean) => {
   if (isRevealed) {
-    // Revealed cards show their true colors
+    // Revealed cards with premium board game styling
     switch (team) {
       case 'red':
-        return 'bg-red-500 text-white border-red-600 shadow-lg';
+        return 'bg-gradient-to-br from-red-600 via-red-500 to-red-700 text-white border-red-800 shadow-2xl shadow-red-500/25';
       case 'blue':
-        return 'bg-blue-500 text-white border-blue-600 shadow-lg';
+        return 'bg-gradient-to-br from-blue-600 via-blue-500 to-blue-700 text-white border-blue-800 shadow-2xl shadow-blue-500/25';
       case 'neutral':
-        return 'bg-gray-400 text-white border-gray-500 shadow-lg';
+        return 'bg-gradient-to-br from-slate-500 via-slate-400 to-slate-600 text-white border-slate-700 shadow-2xl shadow-slate-500/25';
       case 'assassin':
-        return 'bg-black text-white border-gray-800 shadow-lg';
+        return 'bg-gradient-to-br from-gray-900 via-black to-gray-800 text-red-400 border-red-900 shadow-2xl shadow-red-900/50';
       default:
-        return 'bg-gray-300 text-gray-800 border-gray-400';
+        return 'bg-gradient-to-br from-stone-300 to-stone-400 text-stone-800 border-stone-500';
     }
   } else if (isSpymaster) {
-    // ✅ Spymasters can see the true colors clearly (more obvious than before)
+    // Spymaster view with subtle team colors on premium card base
     switch (team) {
       case 'red':
-        return 'bg-red-200 border-red-500 text-red-900 hover:bg-red-300 shadow-md';
+        return 'bg-gradient-to-br from-slate-700/80 via-red-900/40 to-slate-700/80 border-red-400/50 text-red-200 hover:from-red-800/60 hover:to-red-700/60 shadow-lg hover:shadow-red-500/30 backdrop-blur-sm';
       case 'blue':
-        return 'bg-blue-200 border-blue-500 text-blue-900 hover:bg-blue-300 shadow-md';
+        return 'bg-gradient-to-br from-slate-700/80 via-blue-900/40 to-slate-700/80 border-blue-400/50 text-blue-200 hover:from-blue-800/60 hover:to-blue-700/60 shadow-lg hover:shadow-blue-500/30 backdrop-blur-sm';
       case 'neutral':
-        return 'bg-gray-200 border-gray-500 text-gray-800 hover:bg-gray-300 shadow-md';
+        return 'bg-gradient-to-br from-slate-700/80 via-slate-600/40 to-slate-700/80 border-slate-400/50 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 shadow-lg hover:shadow-slate-500/30 backdrop-blur-sm';
       case 'assassin':
-        return 'bg-gray-900 border-black text-red-400 hover:bg-black shadow-lg font-bold';
+        return 'bg-gradient-to-br from-slate-800/80 via-red-900/60 to-slate-800/80 border-red-500 text-red-300 hover:from-red-900/80 hover:to-red-800/80 shadow-lg hover:shadow-red-600/50 font-bold backdrop-blur-sm';
       default:
-        return 'bg-white border-gray-300 text-gray-800 hover:bg-gray-100';
+        return 'bg-gradient-to-br from-slate-700/80 to-slate-600/80 border-slate-400 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 backdrop-blur-sm';
     }
   } else {
-    // Regular players see neutral cards
-    return 'bg-yellow-50 border-yellow-200 text-gray-800 hover:bg-yellow-100';
+    // Regular players see dark card base
+    return 'bg-gradient-to-br from-slate-700/80 via-slate-600/60 to-slate-700/80 border-slate-500 text-slate-100 hover:from-slate-600/80 hover:to-slate-600/80 hover:border-slate-400 shadow-lg hover:shadow-slate-500/50 backdrop-blur-sm';
   }
 };
 
@@ -65,7 +65,6 @@ export const Card: React.FC<CardProps> = ({
 
   const handleClick = () => {
     if (!disabled && onClick && !card.isRevealed) {
-      // ✅ Show submit button inside the card
       setShowSubmit(true);
     }
   };
@@ -87,13 +86,14 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={`
-        relative w-full aspect-square p-3 border-2 rounded-lg flex items-center justify-center
-        transition-all duration-200 text-sm font-medium text-center
+        relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 p-2 sm:p-3 border-2 rounded-xl flex items-center justify-center
+        transition-all duration-300 font-semibold text-center cursor-pointer
         ${colors}
-        ${clickable ? 'cursor-pointer transform hover:scale-105 active:scale-95' : 'cursor-default'}
+        ${clickable ? 'transform hover:scale-105 hover:shadow-xl hover:-translate-y-1 active:scale-95' : 'cursor-default'}
         ${disabled ? 'opacity-50' : ''}
-        ${showSubmit ? 'ring-4 ring-blue-400 ring-opacity-50' : ''}
+        ${showSubmit ? 'ring-4 ring-violet-400 ring-opacity-50 scale-105 shadow-xl' : ''}
         ${className}
+        backdrop-blur-sm
       `}
       onClick={handleClick}
       role={clickable ? 'button' : 'text'}
@@ -107,12 +107,12 @@ export const Card: React.FC<CardProps> = ({
     >
       {/* Word - hidden when submit buttons are shown */}
       {!showSubmit && (
-        <span className="font-semibold text-xs sm:text-sm leading-tight break-words">
+        <span className="font-bold text-xs sm:text-sm md:text-base leading-tight break-words px-1">
           {card.word.replace(/_/g, ' ')}
         </span>
       )}
 
-      {/* ✅ Submit/Cancel buttons - shown when card is clicked */}
+      {/* Enhanced Submit/Cancel buttons */}
       {showSubmit && !card.isRevealed && (
         <div className="flex flex-col gap-2 w-full">
           <button
@@ -120,7 +120,7 @@ export const Card: React.FC<CardProps> = ({
               e.stopPropagation();
               handleSubmit();
             }}
-            className="bg-green-500 text-white px-2 py-1 rounded text-xs font-bold hover:bg-green-600 transition-colors"
+            className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-2 py-1 rounded-md text-xs font-bold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-lg transform hover:scale-105 border border-emerald-500"
           >
             ✓ GUESS
           </button>
@@ -129,29 +129,22 @@ export const Card: React.FC<CardProps> = ({
               e.stopPropagation();
               handleCancel();
             }}
-            className="bg-gray-500 text-white px-2 py-1 rounded text-xs hover:bg-gray-600 transition-colors"
+            className="bg-gradient-to-r from-slate-600 to-slate-700 text-white px-2 py-1 rounded-md text-xs hover:from-slate-700 hover:to-slate-800 transition-all duration-200 shadow-lg border border-slate-500"
           >
             ✗ Cancel
           </button>
         </div>
       )}
 
-      {/* Revealed indicator */}
+      {/* Enhanced revealed indicator */}
       {card.isRevealed && (
-        <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-75" />
+        <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90 shadow-sm" />
       )}
 
-      {/* ✅ Spymaster team indicator (only for unrevealed cards) - More visible */}
+      {/* Enhanced spymaster team indicator */}
       {isSpymaster && !card.isRevealed && !showSubmit && (
-        <div className="absolute bottom-1 left-1 text-lg opacity-90 bg-white rounded-full p-1 shadow-sm">
+        <div className="absolute bottom-1 left-1 text-sm bg-gradient-to-br from-slate-600/90 to-slate-700/90 rounded-full p-1 shadow-lg border border-slate-400/50 backdrop-blur-sm">
           {getTeamEmoji(card.team)}
-        </div>
-      )}
-
-      {/* Position indicator for debugging (can be removed) */}
-      {process.env.NODE_ENV === 'development' && !showSubmit && (
-        <div className="absolute top-0 left-0 text-xs opacity-30 bg-black text-white px-1 rounded-br">
-          {card.position}
         </div>
       )}
     </div>

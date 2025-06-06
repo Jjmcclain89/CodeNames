@@ -75,25 +75,9 @@ function App() {
 
   return (
     <Router>
-      <div className="App min-h-screen bg-gray-50">
-        <header className="bg-blue-600 text-white p-4 shadow-lg">
-          <div className="container mx-auto flex justify-between items-center">
-            <h1 className="text-2xl font-bold">Codenames</h1>
-            {isAuthenticated && (
-              <div className="flex items-center space-x-4">
-                <span>Welcome, {user?.username}!</span>
-                <button
-                  onClick={handleLogout}
-                  className="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded text-sm"
-                >
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
-        
-        <main className="container mx-auto p-4">
+      <div className="App min-h-screen">
+
+        <main>
           <Routes>
             {/* Login Route */}
             <Route

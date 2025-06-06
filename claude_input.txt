@@ -1,1640 +1,933 @@
 ================================================================================
 COMBINED FILES FOR CLAUDE IMPORT
-Generated from 6 files
+Generated from 2 files
 ================================================================================
 
 TABLE OF CONTENTS:
- 1. backend/src/models/Game.ts
- 2. backend/src/services/gameService.ts
- 3. frontend/src/components/GameBoard/GameBoard.tsx
- 4. frontend/src/components/GameBoard/Card.tsx
- 5. shared/types/game.ts
- 6. backend/src/socket/socketHandlers.ts
+ 1. frontend/src/App.tsx
+ 2. frontend/src/pages/GamePage.tsx
 
 ================================================================================
 
 ============================================================
-FILE: backend/src/models/Game.ts
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\models\Game.ts
-SIZE: 9966 characters
+FILE: frontend/src/App.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\App.tsx
+SIZE: 4489 characters
 ============================================================
-// Game Model for Codenames - Integrates with existing in-memory storage
-import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS } from '../../../shared/types/game';
+import React, { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
+import GamePage from './pages/GamePage';
+import DebugPage from './pages/DebugPage';
+import GameDebugPage from './pages/GameDebugPage';
+import authService from './services/authService';
+import socketService from './services/socketService';
+import './App.css';
 
-export class CodenamesGameModel {
-  private game: CodenamesGame;
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
-  constructor(roomCode: string, config: GameConfig = GAME_CONFIG.STANDARD_SETUP) {
-    this.game = {
-      id: this.generateGameId(),
-      roomCode,
-      status: 'waiting',
-      currentTurn: 'red', // Red team always starts
-      players: [],
-      board: this.generateBoard(config),
-      guessesRemaining: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-  }
-
-  // Getters
-  getGame(): CodenamesGame {
-    return { ...this.game };
-  }
-
-  getId(): string {
-    return this.game.id;
-  }
-
-  getStatus(): CodenamesGame['status'] {
-    return this.game.status;
-  }
-
-  getRoomCode(): string {
-    return this.game.roomCode;
-  }
-
-  // Player management
-  addPlayer(playerId: string, username: string, socketId: string): boolean {
-    if (this.game.players.length >= GAME_CONFIG.MAX_PLAYERS) {
-      return false;
-    }
-
-    if (this.game.players.find(p => p.id === playerId)) {
-      return false; // Player already exists
-    }
-
-    const player: GamePlayer = {
-      id: playerId,
-      username,
-      team: 'neutral',
-      role: 'operative',
-      isOnline: true,
-      socketId
-    };
-
-    this.game.players.push(player);
-    this.updateTimestamp();
-    return true;
-  }
-
-  removePlayer(playerId: string): boolean {
-    const index = this.game.players.findIndex(p => p.id === playerId);
-    if (index === -1) return false;
-
-    this.game.players.splice(index, 1);
-    this.updateTimestamp();
-    return true;
-  }
-
-  assignPlayerToTeam(playerId: string, team: TeamColor, role: PlayerRole): boolean {
-    if (team === 'neutral' || team === 'assassin') {
-      return false;
-    }
-
-    const player = this.game.players.find(p => p.id === playerId);
-    if (!player) return false;
-
-    // Check if team already has a spymaster
-    if (role === 'spymaster') {
-      const existingSpymaster = this.game.players.find(
-        p => p.team === team && p.role === 'spymaster' && p.id !== playerId
-      );
-      if (existingSpymaster) {
-        return false;
-      }
-    }
-
-    player.team = team;
-    player.role = role;
-    this.updateTimestamp();
-    return true;
-  }
-
-  updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
-    const player = this.game.players.find(p => p.id === playerId);
-    if (!player) return false;
-
-    player.isOnline = isOnline;
-    this.updateTimestamp();
-    return true;
-  }
-
-  // Game flow
-  canStartGame(): boolean {
-    console.log('🔍 [VALIDATION] Checking if game can start');
-    console.log('🔍 [VALIDATION] Game status:', this.game.status);
-    console.log('🔍 [VALIDATION] Player count:', this.game.players.length);
+  useEffect(() => {
+    console.log('🔍 APP DEBUG: useEffect triggered');
+    console.log('🔍 APP DEBUG: Timestamp:', Date.now());
     
-    if (this.game.status !== 'waiting') {
-      console.log('❌ [VALIDATION] Game not in waiting status');
-      return false;
-    }
-    
-    // Log all players and their teams/roles
-    console.log('🔍 [VALIDATION] Current players:');
-    this.game.players.forEach((p, i) => {
-      console.log(`  ${i+1}. ${p.username} - Team: ${p.team}, Role: ${p.role}`);
-    });
-    
-    // For testing: allow starting with just one player if they're assigned to a team
-    const hasTeamPlayers = this.game.players.some(p => p.team === 'red' || p.team === 'blue');
-    if (process.env.NODE_ENV === 'development' && this.game.players.length >= 1 && hasTeamPlayers) {
-      console.log('✅ [VALIDATION] Development mode - allowing start with assigned players');
-      return true;
-    }
-    
-    // Relaxed validation for testing - just need players on teams
-    if (this.game.players.length < 2) {
-      console.log('❌ [VALIDATION] Need at least 2 players');
-      return false;
-    }
-
-    const redSpymaster = this.game.players.find(p => p.team === 'red' && p.role === 'spymaster');
-    const blueSpymaster = this.game.players.find(p => p.team === 'blue' && p.role === 'spymaster');
-    const redOperatives = this.game.players.filter(p => p.team === 'red' && p.role === 'operative');
-    const blueOperatives = this.game.players.filter(p => p.team === 'blue' && p.role === 'operative');
-    
-    console.log('🔍 [VALIDATION] Red spymaster:', !!redSpymaster);
-    console.log('🔍 [VALIDATION] Blue spymaster:', !!blueSpymaster);
-    console.log('🔍 [VALIDATION] Red operatives:', redOperatives.length);
-    console.log('🔍 [VALIDATION] Blue operatives:', blueOperatives.length);
-
-    // Relaxed validation: just need at least one player per team (can be spymaster OR operative)
-    const redPlayers = this.game.players.filter(p => p.team === 'red');
-    const bluePlayers = this.game.players.filter(p => p.team === 'blue');
-    
-    const canStart = redPlayers.length > 0 && bluePlayers.length > 0;
-    console.log('🔍 [VALIDATION] Can start game:', canStart, '(Red:', redPlayers.length, 'Blue:', bluePlayers.length, ')');
-    
-    return canStart;
-  }
-
-  startGame(): boolean {
-    if (!this.canStartGame()) return false;
-
-    this.game.status = 'playing';
-    this.game.currentTurn = 'red';
-    this.game.guessesRemaining = 0;
-    this.updateTimestamp();
-    return true;
-  }
-
-  // Game actions
-  giveClue(playerId: string, word: string, number: number): boolean {
-    const player = this.game.players.find(p => p.id === playerId);
-    
-    if (!player || player.role !== 'spymaster' || player.team !== this.game.currentTurn) {
-      return false;
-    }
-
-    if (this.game.status !== 'playing') return false;
-
-    this.game.currentClue = {
-      word: word.toUpperCase(),
-      number,
-      givenBy: playerId,
-      timestamp: new Date().toISOString()
-    };
-
-    this.game.guessesRemaining = number + 1; // Players get one extra guess
-    this.updateTimestamp();
-    return true;
-  }
-
-  revealCard(playerId: string, cardId: string): { success: boolean; card?: CodeCard; gameEnded?: boolean; winner?: TeamColor } {
-    const player = this.game.players.find(p => p.id === playerId);
-    
-    if (!player || player.role !== 'operative' || player.team !== this.game.currentTurn) {
-      return { success: false };
-    }
-
-    if (this.game.status !== 'playing' || this.game.guessesRemaining <= 0) {
-      return { success: false };
-    }
-
-    const card = this.game.board.find(c => c.id === cardId);
-    if (!card || card.isRevealed) {
-      return { success: false };
-    }
-
-    // Reveal the card
-    card.isRevealed = true;
-    card.revealedBy = playerId;
-    this.game.guessesRemaining--;
-
-    let gameEnded = false;
-    let winner: TeamColor | undefined;
-
-    // Check game ending conditions
-    if (card.team === 'assassin') {
-      // Game ends immediately - other team wins
-      this.game.status = 'finished';
-      winner = this.game.currentTurn === 'red' ? 'blue' : 'red';
-      gameEnded = true;
-    } else {
-      // Check if team found all their cards
-      const redCards = this.game.board.filter(c => c.team === 'red');
-      const blueCards = this.game.board.filter(c => c.team === 'blue');
-      const redRevealed = redCards.filter(c => c.isRevealed).length;
-      const blueRevealed = blueCards.filter(c => c.isRevealed).length;
-
-      if (redRevealed === redCards.length) {
-        this.game.status = 'finished';
-        winner = 'red';
-        gameEnded = true;
-      } else if (blueRevealed === blueCards.length) {
-        this.game.status = 'finished';
-        winner = 'blue';
-        gameEnded = true;
-      } else if (card.team !== this.game.currentTurn || this.game.guessesRemaining === 0) {
-        // Wrong team card or out of guesses - end turn
-        this.endTurn();
-      }
-    }
-
-    if (gameEnded && winner) {
-      this.game.winner = winner;
-    }
-
-    this.updateTimestamp();
-    return { success: true, card, gameEnded, winner };
-  }
-
-  endTurn(): boolean {
-    if (this.game.status !== 'playing') return false;
-
-    this.game.currentTurn = this.game.currentTurn === 'red' ? 'blue' : 'red';
-    this.game.guessesRemaining = 0;
-    this.game.currentClue = undefined;
-    this.updateTimestamp();
-    return true;
-  }
-
-  resetGame(): void {
-    const roomCode = this.game.roomCode;
-    const players = this.game.players.map(p => ({ ...p, role: 'operative' as PlayerRole }));
-
-    this.game = {
-      id: this.generateGameId(),
-      roomCode,
-      status: 'waiting',
-      currentTurn: 'red',
-      players,
-      board: this.generateBoard(),
-      guessesRemaining: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-  }
-
-  // Private methods
-  private generateBoard(config: GameConfig = GAME_CONFIG.STANDARD_SETUP): CodeCard[] {
-    // Shuffle and pick 25 words
-    const shuffledWords = [...CODENAMES_WORDS].sort(() => Math.random() - 0.5).slice(0, 25);
-    
-    // Create team assignments with proper typing
-    const teamAssignments: TeamColor[] = [
-      ...Array(config.redCards).fill('red' as TeamColor),
-      ...Array(config.blueCards).fill('blue' as TeamColor),
-      ...Array(config.neutralCards).fill('neutral' as TeamColor),
-      ...Array(config.assassinCards).fill('assassin' as TeamColor)
-    ];
-    
-    // Ensure we have exactly 25 assignments
-    while (teamAssignments.length < 25) {
-      teamAssignments.push('neutral' as TeamColor);
-    }
-    teamAssignments.length = 25; // Trim to exactly 25
-
-    // Shuffle team assignments
-    teamAssignments.sort(() => Math.random() - 0.5);
-
-    // Create cards with proper type safety
-    return shuffledWords.map((word, index) => ({
-      id: `card-${index}`,
-      word,
-      team: teamAssignments[index] || 'neutral', // Fallback to prevent undefined
-      isRevealed: false,
-      position: index
-    }));
-  }
-
-  private generateGameId(): string {
-    return `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private updateTimestamp(): void {
-    this.game.updatedAt = new Date().toISOString();
-  }
-}
-
-
-============================================================
-FILE: backend/src/services/gameService.ts
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\services\gameService.ts
-SIZE: 13408 characters
-============================================================
-// Game Service - Manages games and integrates with existing storage
-import { CodenamesGameModel } from '../models/Game';
-import { CodenamesGame, TeamColor, PlayerRole } from '../../../shared/types/game';
-
-interface GameWithMeta {
-  model: CodenamesGameModel;
-  lastActivity: Date;
-}
-
-export class GameService {
-  private games: Map<string, GameWithMeta> = new Map();
-  private playerGameMap: Map<string, string> = new Map(); // playerId -> gameId
-  private gameCodes: Map<string, string> = new Map(); // gameCode -> gameId mapping
-
-  // Game code management methods
-  generateGameCode(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    
-    // Ensure code is unique
-    if (this.gameCodes.has(code)) {
-      return this.generateGameCode(); // Try again
-    }
-    
-    return code;
-  }
-
-  createGameWithCode(gameCode: string, creatorId: string): CodenamesGameModel {
-    // Remove any existing game with this code
-    this.removeGameByCode(gameCode);
-
-    const gameModel = new CodenamesGameModel(gameCode);
-    this.games.set(gameModel.getId(), {
-      model: gameModel,
-      lastActivity: new Date()
-    });
-    
-    // Map the game code to the game ID
-    this.gameCodes.set(gameCode, gameModel.getId());
-    
-    console.log(`Created game with code ${gameCode} and ID ${gameModel.getId()}`);
-    return gameModel;
-  }
-
-  getGameByCode(gameCode: string): CodenamesGameModel | null {
-    const gameId = this.gameCodes.get(gameCode);
-    if (!gameId) return null;
-    
-    const gameWithMeta = this.games.get(gameId);
-    if (gameWithMeta) {
-      gameWithMeta.lastActivity = new Date();
-      return gameWithMeta.model;
-    }
-    return null;
-  }
-
-  addPlayerToGameByCode(gameCode: string, playerId: string, username: string, socketId: string): boolean {
-    const game = this.getGameByCode(gameCode);
-    if (!game) return false;
-
-    // Remove player from any existing game first
-    this.removePlayerFromAllGames(playerId);
-
-    const success = game.addPlayer(playerId, username, socketId);
-    if (success) {
-      this.playerGameMap.set(playerId, game.getId());
-    }
-    return success;
-  }
-
-  removeGameByCode(gameCode: string): boolean {
-    const gameId = this.gameCodes.get(gameCode);
-    if (gameId) {
-      this.gameCodes.delete(gameCode);
-      return this.deleteGame(gameId);
-    }
-    return false;
-  }
-
-  // Existing game lifecycle methods
-  createGameForRoom(roomCode: string): CodenamesGameModel {
-    // Check if game already exists - don't delete it!
-    const existingGame = this.getGameForRoom(roomCode);
-    if (existingGame) {
-      console.log(`⚠️  Game already exists for room ${roomCode}, returning existing game`);
-      return existingGame;
-    }
-
-
-  // Method to explicitly create a fresh game (for reset/restart scenarios)
-    console.log(`🎮 Creating new game for room: ${roomCode}`);
-    const gameModel = new CodenamesGameModel(roomCode);
-    this.games.set(gameModel.getId(), {
-      model: gameModel,
-      lastActivity: new Date()
-    });
-
-    return gameModel;
-  }
-
-  // Method to explicitly create a fresh game (for reset/restart scenarios)
-  createFreshGameForRoom(roomCode: string): CodenamesGameModel {
-    console.log(`🎮 Creating fresh game for room: ${roomCode} (deleting any existing)`);
-    this.deleteGameForRoom(roomCode);
-
-    const gameModel = new CodenamesGameModel(roomCode);
-    this.games.set(gameModel.getId(), {
-      model: gameModel,
-      lastActivity: new Date()
-    });
-
-    return gameModel;
-  }
-
-  getGame(gameId: string): CodenamesGameModel | null {
-    const gameWithMeta = this.games.get(gameId);
-    if (gameWithMeta) {
-      gameWithMeta.lastActivity = new Date();
-      return gameWithMeta.model;
-    }
-    return null;
-  }
-
-  getGameForRoom(roomCode: string): CodenamesGameModel | null {
-    for (const [gameId, gameWithMeta] of this.games.entries()) {
-      if (gameWithMeta.model.getRoomCode() === roomCode) {
-        gameWithMeta.lastActivity = new Date();
-        return gameWithMeta.model;
-      }
-    }
-    return null;
-  }
-
-  getGameByPlayer(playerId: string): CodenamesGameModel | null {
-    const gameId = this.playerGameMap.get(playerId);
-    if (gameId) {
-      return this.getGame(gameId);
-    }
-    return null;
-  }
-
-  deleteGame(gameId: string): boolean {
-    const gameWithMeta = this.games.get(gameId);
-    if (gameWithMeta) {
-      // Remove all players from the player map
-      const game = gameWithMeta.model.getGame();
-      game.players.forEach((player: any) => {
-        this.playerGameMap.delete(player.id);
-      });
+    const initAuth = async () => {
+      const token = authService.getToken();
+      const savedUser = authService.getUser();
+      console.log('🔍 APP DEBUG: Token exists:', !!token);
+      console.log('🔍 APP DEBUG: Saved user exists:', !!savedUser);
       
-      // Remove from game codes mapping
-      for (const [code, id] of this.gameCodes.entries()) {
-        if (id === gameId) {
-          this.gameCodes.delete(code);
-          break;
-        }
-      }
-      
-      this.games.delete(gameId);
-      return true;
-    }
-    return false;
-  }
-
-  deleteGameForRoom(roomCode: string): boolean {
-    for (const [gameId, gameWithMeta] of this.games.entries()) {
-      if (gameWithMeta.model.getRoomCode() === roomCode) {
-        return this.deleteGame(gameId);
-      }
-    }
-    return false;
-  }
-
-  // Player management
-  addPlayerToGame(gameId: string, playerId: string, username: string, socketId: string): boolean {
-    console.log(`🎯 [ADDPLAYER] Adding ${username} (${playerId}) to game ${gameId}`);
-    
-    const game = this.getGame(gameId);
-    if (!game) {
-      console.log(`❌ [ADDPLAYER] Game ${gameId} not found`);
-      return false;
-    }
-
-    // Check if player is already in THIS game
-    const currentGame = this.getGameByPlayer(playerId);
-    if (currentGame && currentGame.getId() === gameId) {
-      console.log(`ℹ️  [ADDPLAYER] ${username} already in game ${gameId}`);
-      return true; // Already in the correct game
-    }
-
-    // Remove player from any other game first
-    if (currentGame && currentGame.getId() !== gameId) {
-      console.log(`🔄 [ADDPLAYER] Moving ${username} from game ${currentGame.getId()} to ${gameId}`);
-      this.removePlayerFromAllGames(playerId);
-    }
-
-    const success = game.addPlayer(playerId, username, socketId);
-    if (success) {
-      this.playerGameMap.set(playerId, gameId);
-      console.log(`✅ [ADDPLAYER] Successfully added ${username} to game ${gameId}`);
-    } else {
-      console.log(`❌ [ADDPLAYER] Failed to add ${username} to game ${gameId}`);
-    }
-    
-    return success;
-  }
-
-  removePlayerFromAllGames(playerId: string): boolean {
-    const game = this.getGameByPlayer(playerId);
-    if (game) {
-      const success = game.removePlayer(playerId);
-      if (success) {
-        this.playerGameMap.delete(playerId);
+      if (token && savedUser) {
+        // Verify token is still valid
+        const result = await authService.verifyToken(token);
+        console.log('🔍 APP DEBUG: Token verification result:', result.success);
         
-        // Don't immediately delete empty games - they might be rejoined
-        const gameState = game.getGame();
-        if (gameState.players.length === 0) {
-          console.log(`🎯 Game ${gameState.id} is now empty but keeping it alive for potential reconnection`);
-          // this.deleteGame(gameState.id); // Commented out - let cleanupInactiveGames handle this later
+        if (result.success) {
+          setIsAuthenticated(true);
+          setUser(savedUser);
+          // Initialize socket connection with token
+          console.log('🔌 App.tsx: Initializing socket connection for user:', savedUser.username);
+          
+          socketService.connect();
+          socketService.authenticate(token);
+        } else {
+          authService.logout();
         }
       }
-      return success;
-    }
-    return false;
-  }
-
-  updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
-    const game = this.getGameByPlayer(playerId);
-    if (game) {
-      return game.updatePlayerOnlineStatus(playerId, isOnline);
-    }
-    return false;
-  }
-
-  assignPlayerToTeam(playerId: string, team: TeamColor, role: PlayerRole): { success: boolean; error?: string } {
-    console.log(`🎯 [GAMESERVICE] assignPlayerToTeam called for player ${playerId} to join ${team} as ${role}`);
-    
-    const game = this.getGameByPlayer(playerId);
-    if (!game) {
-      console.log(`❌ [GAMESERVICE] Player ${playerId} not found in any game`);
-      console.log(`🎯 [GAMESERVICE] Current player-game mappings:`, Array.from(this.playerGameMap.entries()));
-      return { success: false, error: 'Player not in any game' };
-    }
-
-    console.log(`🎯 [GAMESERVICE] Found game ${game.getId()} for player ${playerId}`);
-    const preState = game.getGame();
-    console.log(`🎯 [GAMESERVICE] Pre-assignment game state:`, preState.players.map(p => `${p.username}(${p.team}/${p.role})`));
-    
-    const success = game.assignPlayerToTeam(playerId, team, role);
-    
-    const postState = game.getGame();
-    console.log(`🎯 [GAMESERVICE] Post-assignment game state:`, postState.players.map(p => `${p.username}(${p.team}/${p.role})`));
-    console.log(`🎯 [GAMESERVICE] Assignment result: ${success}`);
-    
-    return { 
-      success, 
-      error: success ? undefined : 'Cannot assign to team - team may already have a spymaster' 
+      setIsLoading(false);
     };
-  }
-
-  // Game actions
-  startGame(playerId: string): { success: boolean; error?: string } {
-    console.log('🎯 [GAMESERVICE] startGame called for player:', playerId);
     
-    const game = this.getGameByPlayer(playerId);
-    console.log('🎯 [GAMESERVICE] Game found for player:', !!game);
+    initAuth();
+  }, []);
+
+  const handleLogin = (userData: any, token: string) => {
+    console.log('🔍 LOGIN DEBUG: handleLogin called for user:', userData.username);
     
-    if (!game) {
-      console.log('❌ [GAMESERVICE] Player not in any game');
-      // Log current player-game mappings for debugging
-      console.log('🎯 [GAMESERVICE] Current player mappings:');
-      for (const [pid, gid] of this.playerGameMap.entries()) {
-        console.log(`  Player ${pid} -> Game ${gid}`);
-      }
-      return { success: false, error: 'Player not in any game' };
-    }
+    setIsAuthenticated(true);
+    setUser(userData);
+    // Connect to socket after successful login
+    console.log('🔌 App.tsx: Connecting socket after login for:', userData.username);
+    socketService.connect();
+    socketService.authenticate(token);
+  };
 
-    console.log('🎯 [GAMESERVICE] Checking if game can start...');
-    const canStart = game.canStartGame();
-    console.log('🎯 [GAMESERVICE] Can start result:', canStart);
-    
-    if (!canStart) {
-      return { success: false, error: 'Cannot start game - need players on both teams' };
-    }
+  const handleLogout = () => {
+    authService.logout();
+    socketService.disconnect();
+    setIsAuthenticated(false);
+    setUser(null);
+  };
 
-    console.log('🎯 [GAMESERVICE] Starting game...');
-    const success = game.startGame();
-    console.log('🎯 [GAMESERVICE] Start game result:', success);
-    
-    return { success, error: success ? undefined : 'Failed to start game' };
-  }
-
-  giveClue(playerId: string, word: string, number: number): { success: boolean; error?: string } {
-    const game = this.getGameByPlayer(playerId);
-    if (!game) {
-      return { success: false, error: 'Player not in any game' };
-    }
-
-    const success = game.giveClue(playerId, word, number);
-    return { 
-      success, 
-      error: success ? undefined : 'Cannot give clue - must be the current team spymaster' 
-    };
-  }
-
-  revealCard(playerId: string, cardId: string): { success: boolean; error?: string; card?: any; gameEnded?: boolean; winner?: TeamColor } {
-    const game = this.getGameByPlayer(playerId);
-    if (!game) {
-      return { success: false, error: 'Player not in any game' };
-    }
-
-    const result = game.revealCard(playerId, cardId);
-    if (!result.success) {
-      return { success: false, error: 'Cannot reveal card - must be current team operative with guesses remaining' };
-    }
-
-    return result;
-  }
-
-  endTurn(playerId: string): { success: boolean; error?: string } {
-    const game = this.getGameByPlayer(playerId);
-    if (!game) {
-      return { success: false, error: 'Player not in any game' };
-    }
-
-    const success = game.endTurn();
-    return { 
-      success, 
-      error: success ? undefined : 'Cannot end turn' 
-    };
-  }
-
-  resetGame(playerId: string): { success: boolean; error?: string } {
-    const game = this.getGameByPlayer(playerId);
-    if (!game) {
-      return { success: false, error: 'Player not in any game' };
-    }
-
-    game.resetGame();
-    return { success: true };
-  }
-
-  // Utility methods
-  getStats(): { totalGames: number; activePlayers: number; gameCodes: number } {
-    return {
-      totalGames: this.games.size,
-      activePlayers: this.playerGameMap.size,
-      gameCodes: this.gameCodes.size
-    };
-  }
-
-  // Get all active games for the games list API
-  getAllActiveGames(): Array<{
-    code: string;
-    id: string;
-    status: string;
-    playerCount: number;
-    players: string[];
-    createdAt: string;
-    lastActivity: string;
-  }> {
-    const activeGames: any[] = [];
-    
-    // Iterate over ALL games (not just gameCodes) to catch games created via createGameForRoom
-    for (const [gameId, gameWithMeta] of this.games.entries()) {
-      const gameState = gameWithMeta.model.getGame();
-      
-      // Use roomCode as the display code (works for both room-based and code-based games)
-      const displayCode = gameState.roomCode || gameId.substring(0, 6).toUpperCase();
-      
-      activeGames.push({
-        code: displayCode,
-        id: gameState.id,
-        status: gameState.status,
-        playerCount: gameState.players.length,
-        players: gameState.players.map((p: any) => p.username),
-        createdAt: gameState.createdAt || new Date().toISOString(),
-        lastActivity: gameWithMeta.lastActivity.toISOString()
-      });
-    }
-    
-    // Sort by most recent activity
-    return activeGames.sort((a, b) => 
-      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl">Loading...</div>
+      </div>
     );
   }
 
-  // Cleanup inactive games
-  cleanupInactiveGames(maxInactiveMinutes: number = 60): number {
-    const cutoffTime = new Date(Date.now() - maxInactiveMinutes * 60 * 1000);
-    let cleanedCount = 0;
-
-    for (const [gameId, gameWithMeta] of this.games.entries()) {
-      if (gameWithMeta.lastActivity < cutoffTime) {
-        this.deleteGame(gameId);
-        cleanedCount++;
-      }
-    }
-
-    return cleanedCount;
-  }
+  return (
+    <Router>
+      <div className="App min-h-screen bg-gray-50">
+        <header className="bg-blue-600 text-white p-4 shadow-lg">
+          <div className="container mx-auto flex justify-between items-center">
+            <h1 className="text-2xl font-bold">Codenames</h1>
+            {isAuthenticated && (
+              <div className="flex items-center space-x-4">
+                <span>Welcome, {user?.username}!</span>
+                <button
+                  onClick={handleLogout}
+                  className="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded text-sm"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
+        </header>
+        
+        <main className="container mx-auto p-4">
+          <Routes>
+            {/* Login Route */}
+            <Route
+              path="/login"
+              element={
+                !isAuthenticated ? (
+                  <LoginPage onLogin={handleLogin} />
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
+            />
+            
+            {/* Home Route */}
+            <Route
+              path="/"
+              element={
+                isAuthenticated ? (
+                  <HomePage />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            {/* Game Route - Direct from homepage */}
+            <Route
+              path="/game/:gameCode"
+              element={
+                isAuthenticated ? (
+                  <GamePage />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            {/* Debug Routes */}
+            <Route path="/debug-game" element={<GameDebugPage />} />
+            <Route path="/debug" element={<DebugPage />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
+  );
 }
 
-// Singleton instance for use in socket handlers
-export const gameService = new GameService();
+export default App;
 
 
 ============================================================
-FILE: frontend/src/components/GameBoard/GameBoard.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameBoard\GameBoard.tsx
-SIZE: 18571 characters
+FILE: frontend/src/pages/GamePage.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\GamePage.tsx
+SIZE: 30269 characters
 ============================================================
 import React, { useState, useEffect } from 'react';
-import { CodenamesGame, GamePlayer, TeamColor, PlayerRole } from '../../types/game';
-import Card from './Card';
-import { gameService } from '../../services/gameService';
+import { useParams, useNavigate } from 'react-router-dom';
+import { socketService } from '../services/socketService';
+import { gameService } from '../services/gameService';
+import GameBoard from '../components/GameBoard/GameBoard';
 
-interface GameBoardProps {
-  gameState: CodenamesGame;
-  currentPlayer: GamePlayer | null;
-  onCardClick: (cardId: string) => void;
-  onGiveClue: (word: string, number: number) => void;
-  onEndTurn: () => void;
-  onStartGame: () => void;
-  onJoinTeam: (team: TeamColor, role: PlayerRole) => void;
-}
-
-export const GameBoard: React.FC<GameBoardProps> = ({
-  gameState,
-  currentPlayer,
-  onCardClick,
-  onGiveClue,
-  onEndTurn,
-  onStartGame,
-  onJoinTeam
-}) => {
-  const [clueWord, setClueWord] = useState('');
-  const [clueNumber, setClueNumber] = useState(1);
-
-  // Reset clue input when turn changes or clue is given
-  useEffect(() => {
-    if (gameState.currentClue) {
-      setClueWord('');
-      setClueNumber(1);
-    }
-  }, [gameState.currentClue]);
-
-  const stats = gameService.getTeamStats(gameState);
-  const isSpymaster = currentPlayer?.role === 'spymaster';
-  const isMyTurn = gameService.isPlayerTurn(gameState, currentPlayer);
-  const canGiveClue = gameService.canPlayerGiveClue(gameState, currentPlayer);
-  const canRevealCard = gameService.canPlayerRevealCard(gameState, currentPlayer);
-
-  const handleGiveClue = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (clueWord.trim() && clueNumber >= 1 && clueNumber <= 9) {
-      onGiveClue(clueWord.trim(), clueNumber);
-    }
-  };
-
-  const getPlayersByTeam = (team: TeamColor) => {
-    return gameState.players.filter(p => p.team === team);
-  };
-
-  const hasSpymaster = (team: TeamColor) => {
-    return gameState.players.some(p => p.team === team && p.role === 'spymaster');
-  };
-
-  if (gameState.status === 'waiting') {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-4xl w-full">
-          <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
-            🕵️ Codenames 🔍
-          </h1>
-          {/* Debug Info */}
-          <div className="bg-gray-100 border rounded-lg p-4 mb-6 text-sm">
-            <h4 className="font-semibold mb-2">🔍 Debug Info:</h4>
-            <div>Game Status: <span className="font-mono">{gameState.status}</span></div>
-            <div>Player Count: <span className="font-mono">{gameState.players.length}</span></div>
-            <div>Current Player: <span className="font-mono">{currentPlayer?.username || 'None'}</span></div>
-            <div>Players: <span className="font-mono">{gameState.players.map(p => p.username).join(', ')}</span></div>
-          </div>
-
-          
-          {/* Current Player Status */}
-          {currentPlayer && (
-            <div className="text-center mb-6 p-4 bg-blue-50 rounded-lg">
-              <p className="text-lg">
-                Welcome, <span className="font-semibold">{currentPlayer.username}</span>!
-              </p>
-              {currentPlayer.team !== 'neutral' && (
-                <p className="text-sm text-gray-600">
-                  You are on the{' '}
-                  <span className={`font-semibold ${currentPlayer.team === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
-                    {currentPlayer.team}
-                  </span>{' '}
-                  team as a <span className="font-semibold">{currentPlayer.role}</span>
-                </p>
-              )}
-            </div>
-          )}
-          
-          {/* Team Selection */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {/* Red Team */}
-            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
-              <h3 className="text-2xl font-semibold text-red-700 mb-4 text-center">
-                🔴 Red Team
-              </h3>
-              <div className="space-y-3 mb-4">
-                <button
-                  onClick={() => onJoinTeam('red', 'spymaster')}
-                  className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={hasSpymaster('red')}
-                >
-                  {hasSpymaster('red') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
-                </button>
-                <button
-                  onClick={() => onJoinTeam('red', 'operative')}
-                  className="w-full bg-red-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-500 transition-colors"
-                >
-                  🕵️ Join as Operative
-                </button>
-              </div>
-              <div className="text-sm text-gray-700">
-                <div className="font-medium mb-2">Team Members:</div>
-                {getPlayersByTeam('red').length === 0 ? (
-                  <p className="text-gray-500 italic">No players yet</p>
-                ) : (
-                  getPlayersByTeam('red').map(player => (
-                    <div key={player.id} className="flex justify-between items-center py-1">
-                      <span>{player.username}</span>
-                      <span className="text-red-600 font-medium">
-                        {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Blue Team */}
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-6">
-              <h3 className="text-2xl font-semibold text-blue-700 mb-4 text-center">
-                🔵 Blue Team
-              </h3>
-              <div className="space-y-3 mb-4">
-                <button
-                  onClick={() => onJoinTeam('blue', 'spymaster')}
-                  className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={hasSpymaster('blue')}
-                >
-                  {hasSpymaster('blue') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
-                </button>
-                <button
-                  onClick={() => onJoinTeam('blue', 'operative')}
-                  className="w-full bg-blue-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-500 transition-colors"
-                >
-                  🕵️ Join as Operative
-                </button>
-              </div>
-              <div className="text-sm text-gray-700">
-                <div className="font-medium mb-2">Team Members:</div>
-                {getPlayersByTeam('blue').length === 0 ? (
-                  <p className="text-gray-500 italic">No players yet</p>
-                ) : (
-                  getPlayersByTeam('blue').map(player => (
-                    <div key={player.id} className="flex justify-between items-center py-1">
-                      <span>{player.username}</span>
-                      <span className="text-blue-600 font-medium">
-                        {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* 🔧 DEBUG TESTING CONTROLS */}
-          <div className="bg-yellow-100 border-2 border-yellow-400 rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-bold text-yellow-800 mb-3">🔧 Testing Mode</h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => {
-                  console.log('🧪 Testing socket connection...');
-                  
-                  const windowSocket = (window as any).socketService;
-                  console.log('Socket service object:', windowSocket);
-                  console.log('Socket object:', windowSocket?.socket);
-                  console.log('Socket connected:', windowSocket?.socket?.connected);
-                  console.log('Socket ID:', windowSocket?.socket?.id);
-                  
-                  if (windowSocket?.socket?.connected) {
-                    windowSocket.socket.emit('test-connection');
-                    console.log('✅ Sent test-connection event');
-                  } else {
-                    console.error('❌ Socket not connected');
-                  }
-                }}
-                className="w-full bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 font-semibold"
-              >
-                🧪 Test Socket Connection
-              </button>
-              <button
-                onClick={() => {
-                  console.log('🔧 Adding test players...');
-                  console.log('Socket service:', (window as any).socketService);
-                  
-                  const socketService = (window as any).socketService;
-                  if (socketService && socketService.socket && socketService.socket.connected) {
-                    socketService.socket.emit('game:add-test-players');
-                    console.log('✅ Emitted game:add-test-players event');
-                  } else {
-                    console.error('❌ Socket not available or not connected');
-                    alert('Socket not connected. Try refreshing the page.');
-                  }
-                }}
-                className="w-full bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 font-semibold"
-              >
-                👥 Add Test Players (3 AI Players)
-              </button>
-              <button
-                onClick={() => {
-                  console.log('🚀 Force starting game...');
-                  onStartGame();
-                }}
-                className="w-full bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 font-semibold"
-              >
-                🚀 Force Start Game
-              </button>
-              <button
-                onClick={() => {
-                  console.log('🔵 Joining blue team...');
-                  onJoinTeam('blue', 'operative');
-                }}
-                className="w-full bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 font-semibold"
-              >
-                🔵 Join Blue Team (You)
-              </button>
-            </div>
-            <p className="text-sm text-yellow-700 mt-2">
-              💡 Step 1: Join Blue Team, Step 2: Add Test Players, Step 3: Force Start
-            </p>
-          </div>
-
-          {/* Start Game Button */}
-          <div className="text-center">
-            <button
-              onClick={onStartGame}
-              className="bg-green-500 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-green-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-              disabled={gameState.players.length === 0}
-            >
-              🚀 Start Game
-            </button>
-            <p className="text-sm text-gray-600 mt-3">
-              Use testing controls above for solo testing
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Game Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-6">
-            {/* Team Scores */}
-            <div className="flex gap-8">
-              <div className="text-center">
-                <div className="text-lg font-semibold text-red-600">🔴 Red Team</div>
-                <div className="text-3xl font-bold text-red-700">{stats.red.remaining}</div>
-                <div className="text-sm text-gray-600">cards left</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-blue-600">🔵 Blue Team</div>
-                <div className="text-3xl font-bold text-blue-700">{stats.blue.remaining}</div>
-                <div className="text-sm text-gray-600">cards left</div>
-              </div>
-            </div>
-
-            {/* Current Turn */}
-            <div className="text-center">
-              <div className="text-lg font-semibold text-gray-700">Current Turn</div>
-              <div className={`text-2xl font-bold ${gameState.currentTurn === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
-                {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn.charAt(0).toUpperCase() + gameState.currentTurn.slice(1)}
-              </div>
-              {gameState.guessesRemaining > 0 && (
-                <div className="text-sm text-gray-600">{gameState.guessesRemaining} guesses left</div>
-              )}
-            </div>
-
-            {/* Player Info */}
-            {currentPlayer && (
-              <div className="text-center">
-                <div className="text-lg font-semibold text-gray-700">You are</div>
-                <div className={`text-xl font-bold ${currentPlayer.team === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
-                  {currentPlayer.team === 'red' ? '🔴' : '🔵'} {currentPlayer.team.charAt(0).toUpperCase() + currentPlayer.team.slice(1)}
-                </div>
-                <div className="text-sm text-gray-600">
-                  {currentPlayer.role === 'spymaster' ? '👑' : '🕵️'} {currentPlayer.role}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Current Clue */}
-          {gameState.currentClue && (
-            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <div className="text-center">
-                <span className="text-lg font-semibold text-gray-700">💡 Current Clue: </span>
-                <span className="text-2xl font-bold text-yellow-700">
-                  {gameState.currentClue.word} ({gameState.currentClue.number})
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Game Controls */}
-        {gameState.status === 'playing' && currentPlayer && (
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-            {canGiveClue && (
-              <form onSubmit={handleGiveClue} className="flex flex-col sm:flex-row gap-4 items-end">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    💡 Clue Word
-                  </label>
-                  <input
-                    type="text"
-                    value={clueWord}
-                    onChange={(e) => setClueWord(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    placeholder="Enter one word clue..."
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    🔢 Number
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="9"
-                    value={clueNumber}
-                    onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
-                    className="w-24 px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="bg-green-500 text-white px-6 py-3 rounded-md hover:bg-green-600 transition-colors font-semibold"
-                >
-                  Give Clue
-                </button>
-              </form>
-            )}
-
-            {canRevealCard && (
-              <div className="text-center">
-                <p className="text-lg text-gray-700 mb-4">
-                  🎯 Click on a card to reveal it ({gameState.guessesRemaining} guesses remaining)
-                </p>
-                <button
-                  onClick={onEndTurn}
-                  className="bg-orange-500 text-white px-6 py-3 rounded-md hover:bg-orange-600 transition-colors font-semibold"
-                >
-                  ⏭️ End Turn
-                </button>
-              </div>
-            )}
-
-            {!isMyTurn && (
-              <div className="text-center text-lg text-gray-600">
-                ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn} team's turn...
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Game Board */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <div className="grid grid-cols-5 gap-3">
-            {gameState.board
-              .sort((a, b) => a.position - b.position)
-              .map((card) => (
-                <Card
-                  key={card.id}
-                  card={card}
-                  isSpymaster={isSpymaster}
-                  onClick={canRevealCard ? onCardClick : undefined}
-                  disabled={!canRevealCard}
-                />
-              ))}
-          </div>
-        </div>
-
-        {/* Game Over Modal */}
-        {gameState.status === 'finished' && gameState.winner && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
-              <h2 className="text-4xl font-bold text-center mb-4">🎉 Game Over! 🎉</h2>
-              <div className={`text-3xl font-bold text-center mb-6 ${gameState.winner === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
-                {gameState.winner === 'red' ? '🔴' : '🔵'} {gameState.winner.charAt(0).toUpperCase() + gameState.winner.slice(1)} Team Wins!
-              </div>
-              <div className="flex gap-4">
-                <button
-                  onClick={() => window.location.reload()}
-                  className="flex-1 bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors font-semibold"
-                >
-                  🔄 New Game
-                </button>
-                <button
-                  onClick={() => gameService.resetGame()}
-                  className="flex-1 bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors font-semibold"
-                >
-                  🎮 Play Again
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default GameBoard;
-
-
-============================================================
-FILE: frontend/src/components/GameBoard/Card.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameBoard\Card.tsx
-SIZE: 3696 characters
-============================================================
-import React from 'react';
-import { CodeCard, TeamColor } from '../../types/game';
-
-interface CardProps {
-  card: CodeCard;
-  isSpymaster: boolean;
-  onClick?: (cardId: string) => void;
-  disabled?: boolean;
-  className?: string;
-}
-
-const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolean) => {
-  if (isRevealed) {
-    // Revealed cards show their true colors
-    switch (team) {
-      case 'red':
-        return 'bg-red-500 text-white border-red-600 shadow-lg';
-      case 'blue':
-        return 'bg-blue-500 text-white border-blue-600 shadow-lg';
-      case 'neutral':
-        return 'bg-gray-400 text-white border-gray-500 shadow-lg';
-      case 'assassin':
-        return 'bg-black text-white border-gray-800 shadow-lg';
-      default:
-        return 'bg-gray-300 text-gray-800 border-gray-400';
-    }
-  } else if (isSpymaster) {
-    // Spymasters can see the true colors with subtle hints
-    switch (team) {
-      case 'red':
-        return 'bg-red-50 border-red-300 text-red-800 hover:bg-red-100';
-      case 'blue':
-        return 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100';
-      case 'neutral':
-        return 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100';
-      case 'assassin':
-        return 'bg-gray-800 border-gray-900 text-white hover:bg-gray-700';
-      default:
-        return 'bg-white border-gray-300 text-gray-800 hover:bg-gray-100';
-    }
-  } else {
-    // Regular players see neutral cards
-    return 'bg-yellow-50 border-yellow-200 text-gray-800 hover:bg-yellow-100';
-  }
-};
-
-const getTeamEmoji = (team: TeamColor) => {
-  switch (team) {
-    case 'red': return '🔴';
-    case 'blue': return '🔵';
-    case 'neutral': return '⚪';
-    case 'assassin': return '💀';
-    default: return '';
-  }
-};
-
-export const Card: React.FC<CardProps> = ({ 
-  card, 
-  isSpymaster, 
-  onClick, 
-  disabled = false,
-  className = ''
-}) => {
-  const handleClick = () => {
-    if (!disabled && onClick && !card.isRevealed) {
-      onClick(card.id);
-    }
-  };
-
-  const colors = getCardColors(card.team, card.isRevealed, isSpymaster);
-  const clickable = !disabled && onClick && !card.isRevealed;
-
-  return (
-    <div
-      className={`
-        relative w-full aspect-square p-3 border-2 rounded-lg flex items-center justify-center
-        transition-all duration-200 text-sm font-medium text-center
-        ${colors}
-        ${clickable ? 'cursor-pointer transform hover:scale-105 active:scale-95' : 'cursor-default'}
-        ${disabled ? 'opacity-50' : ''}
-        ${className}
-      `}
-      onClick={handleClick}
-      role={clickable ? 'button' : 'text'}
-      tabIndex={clickable ? 0 : -1}
-      onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && clickable) {
-          e.preventDefault();
-          handleClick();
-        }
-      }}
-    >
-      {/* Word */}
-      <span className="font-semibold text-xs sm:text-sm leading-tight break-words">
-        {card.word.replace(/_/g, ' ')}
-      </span>
-
-      {/* Revealed indicator */}
-      {card.isRevealed && (
-        <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-75" />
-      )}
-
-      {/* Spymaster team indicator (only for unrevealed cards) */}
-      {isSpymaster && !card.isRevealed && (
-        <div className="absolute bottom-1 left-1 text-xs opacity-70">
-          {getTeamEmoji(card.team)}
-        </div>
-      )}
-
-      {/* Position indicator for debugging (can be removed) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-0 left-0 text-xs opacity-30 bg-black text-white px-1 rounded-br">
-          {card.position}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default Card;
-
-
-============================================================
-FILE: shared/types/game.ts
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\shared\types\game.ts
-SIZE: 6222 characters
-============================================================
-// Shared Game Types for Codenames - Phase 2
-// Integrates with existing shared/types/index.ts
-
-export type TeamColor = 'red' | 'blue' | 'neutral' | 'assassin';
-export type PlayerRole = 'spymaster' | 'operative';
-export type GameStatus = 'waiting' | 'setup' | 'playing' | 'finished';
-
-export interface CodeCard {
-  id: string;
-  word: string;
-  team: TeamColor;
-  isRevealed: boolean;
-  revealedBy?: string; // player id who revealed it
-  position: number; // 0-24 for 5x5 grid
-}
-
-export interface GamePlayer {
+interface Player {
   id: string;
   username: string;
-  team: TeamColor;
-  role: PlayerRole;
-  isOnline: boolean;
-  socketId: string;
+  team?: string;
+  role?: string;
+  isOnline?: boolean;
 }
 
-export interface GameClue {
-  word: string;
-  number: number;
-  givenBy: string; // player id
+interface GameMessage {
+  id: string;
+  username: string;
+  userId: string;
+  text: string;
   timestamp: string;
 }
 
-export interface CodenamesGame {
-  id: string;
-  roomCode: string;
-  status: GameStatus;
-  currentTurn: TeamColor;
-  players: GamePlayer[];
-  board: CodeCard[];
-  currentClue?: GameClue;
-  guessesRemaining: number;
-  winner?: TeamColor;
-  createdAt: string;
-  updatedAt: string;
-}
+const GamePage: React.FC = () => {
+  const { gameCode } = useParams<{ gameCode: string }>();
+  const navigate = useNavigate();
+  const [connectionInitiated, setConnectionInitiated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [gameState, setGameState] = useState<any>(null);
+  const [messages, setMessages] = useState<GameMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [teamActionInProgress, setTeamActionInProgress] = useState(false);
+  const [reconnectionStatus, setReconnectionStatus] = useState<string | null>(null);
 
-export interface GameConfig {
-  boardSize: number; // Always 25 for 5x5
-  redCards: number;   // 9 or 8
-  blueCards: number;  // 8 or 9  
-  neutralCards: number; // 7
-  assassinCards: number; // 1
-}
-
-// Socket Events for Game (extends existing socket events)
-export interface GameSocketEvents {
-  // Game Management
-  'game:create': () => void;
-  'game:join': (gameId: string) => void;
-  'game:start': () => void;
-  'game:reset': () => void;
-  
-  // Team/Role Assignment
-  'game:join-team': (team: TeamColor, role: PlayerRole) => void;
-  
-  // Game Actions
-  'game:give-clue': (clue: { word: string; number: number }) => void;
-  'game:reveal-card': (cardId: string) => void;
-  'game:end-turn': () => void;
-  
-  // Game State Updates (server to client)
-  'game:state-updated': (game: CodenamesGame) => void;
-  'game:player-joined': (player: GamePlayer) => void;
-  'game:card-revealed': (card: CodeCard) => void;
-  'game:clue-given': (clue: GameClue) => void;
-  'game:turn-changed': (newTurn: TeamColor) => void;
-  'game:game-ended': (winner: TeamColor) => void;
-  'game:error': (error: string) => void;
-}
-
-// Game Constants
-export const GAME_CONFIG = {
-  BOARD_SIZE: 25,
-  MIN_PLAYERS: 1,
-  MAX_PLAYERS: 8,
-  STANDARD_SETUP: {
-    boardSize: 25,
-    redCards: 9,
-    blueCards: 8,
-    neutralCards: 7,
-    assassinCards: 1
-  } as GameConfig
-};
-
-// Word list for game generation
-export const CODENAMES_WORDS = [
-  'AFRICA', 'AGENT', 'AIR', 'ALIEN', 'ALPS', 'AMAZON', 'AMBULANCE', 'AMERICA', 'ANGEL', 'ANTARCTICA',
-  'APPLE', 'ARM', 'ATLANTIS', 'AUSTRALIA', 'AZTEC', 'BACK', 'BALL', 'BAND', 'BANK', 'BAR',
-  'BARK', 'BAT', 'BATTERY', 'BEACH', 'BEAR', 'BEAT', 'BED', 'BEIJING', 'BELL', 'BELT',
-  'BERLIN', 'BERMUDA', 'BERRY', 'BILL', 'BLOCK', 'BOARD', 'BOLT', 'BOMB', 'BOND', 'BOOM',
-  'BOOT', 'BOTTLE', 'BOW', 'BOX', 'BRIDGE', 'BRUSH', 'BUCK', 'BUFFALO', 'BUG', 'BUGLE',
-  'BUTTON', 'CALF', 'CANADA', 'CAP', 'CAPITAL', 'CAR', 'CARD', 'CARROT', 'CASINO', 'CAST',
-  'CAT', 'CELL', 'CENTAUR', 'CENTER', 'CHAIR', 'CHANGE', 'CHARGE', 'CHECK', 'CHEST', 'CHICK',
-  'CHINA', 'CHOCOLATE', 'CHURCH', 'CIRCLE', 'CLIFF', 'CLOAK', 'CLUB', 'CODE', 'COLD', 'COMIC',
-  'COMPOUND', 'COMPUTER', 'CONDUCTOR', 'CONTRACT', 'COOK', 'COPPER', 'COTTON', 'COURT', 'COVER', 'CRANE',
-  'CRASH', 'CRICKET', 'CROSS', 'CROWN', 'CYCLE', 'CZECH', 'DANCE', 'DATE', 'DAY', 'DEATH',
-  'DECK', 'DEGREE', 'DIAMOND', 'DICE', 'DINOSAUR', 'DISEASE', 'DOCTOR', 'DOG', 'DRAFT', 'DRAGON',
-  'DRESS', 'DRILL', 'DROP', 'DUCK', 'DWARF', 'EAGLE', 'EGYPT', 'ENGINE', 'ENGLAND', 'EUROPE',
-  'EYE', 'FACE', 'FAIR', 'FALL', 'FAN', 'FENCE', 'FIELD', 'FIGHTER', 'FIGURE', 'FILE',
-  'FILM', 'FIRE', 'FISH', 'FLUTE', 'FLY', 'FOOT', 'FORCE', 'FOREST', 'FORK', 'FRANCE',
-  'GAME', 'GAS', 'GENIUS', 'GERMANY', 'GHOST', 'GIANT', 'GLASS', 'GLOVE', 'GOLD', 'GRACE',
-  'GRASS', 'GREECE', 'GREEN', 'GROUND', 'HAM', 'HAND', 'HAWK', 'HEAD', 'HEART', 'HELICOPTER',
-  'HIMALAYAS', 'HOLE', 'HOLLYWOOD', 'HONEY', 'HOOD', 'HOOK', 'HORN', 'HORSE', 'HORSESHOE', 'HOSPITAL',
-  'HOTEL', 'ICE', 'ICE_CREAM', 'INDIA', 'IRON', 'IVORY', 'JACK', 'JAM', 'JET', 'JUPITER',
-  'KANGAROO', 'KETCHUP', 'KEY', 'KID', 'KING', 'KIWI', 'KNIFE', 'KNIGHT', 'LAB', 'LAP',
-  'LASER', 'LAWYER', 'LEAD', 'LEMON', 'LEPRECHAUN', 'LIFE', 'LIGHT', 'LIMOUSINE', 'LINE', 'LINK',
-  'LION', 'LITTER', 'LOCH_NESS', 'LOCK', 'LOG', 'LONDON', 'LUCK', 'MAIL', 'MAMMOTH', 'MAPLE',
-  'MARBLE', 'MARCH', 'MASS', 'MATCH', 'MERCURY', 'MEXICO', 'MICROSCOPE', 'MILLIONAIRE', 'MINE', 'MINT',
-  'MISSILE', 'MODEL', 'MOLE', 'MOON', 'MOSCOW', 'MOUNT', 'MOUSE', 'MOUTH', 'MUG', 'NAIL',
-  'NEEDLE', 'NET', 'NEW_YORK', 'NIGHT', 'NINJA', 'NOTE', 'NOVEL', 'NURSE', 'NUT', 'OCTOPUS',
-  'OIL', 'OLIVE', 'OLYMPUS', 'OPERA', 'ORANGE', 'ORGAN', 'PALM', 'PAN', 'PANTS', 'PAPER',
-  'PARACHUTE', 'PARK', 'PART', 'PASS', 'PASTE', 'PENGUIN', 'PHOENIX', 'PIANO', 'PIE', 'PILOT',
-  'PIN', 'PIPE', 'PIRATE', 'PISTOL', 'PIT', 'PITCH', 'PIZZA', 'PLANE', 'PLASTIC', 'PLATE',
-  'PLATYPUS', 'PLAY', 'PLOT', 'POINT', 'POISON', 'POLE', 'POLICE', 'POOL', 'PORT', 'POST',
-  'POUND', 'PRESS', 'PRINCESS', 'PUMPKIN', 'PUPIL', 'PYRAMID', 'QUEEN', 'RABBIT', 'RACKET', 'RAY',
-  'REVOLUTION', 'RING', 'ROBIN', 'ROBOT', 'ROCK', 'ROME', 'ROOT', 'ROSE', 'ROULETTE', 'ROUND',
-  'ROW', 'RULER', 'SATELLITE', 'SATURN', 'SCALE', 'SCHOOL', 'SCIENTIST', 'SCORPION', 'SCREEN', 'SCUBA_DIVER',
-  'SEAL', 'SERVER', 'SHADOW', 'SHAKESPEARE', 'SHARK', 'SHIP', 'SHOE', 'SHOP', 'SHOT', 'SINK',
-  'SKYSCRAPER', 'SLIP', 'SLUG', 'SMUGGLER', 'SNOW', 'SNOWMAN', 'SOCK', 'SOLDIER', 'SOUL', 'SOUND',
-  'SPACE', 'SPELL', 'SPIDER', 'SPIKE', 'SPINE', 'SPOT', 'SPRING', 'SPY', 'SQUARE', 'STADIUM',
-  'STAFF', 'STAR', 'STATE', 'STICK', 'STOCK', 'STRAW', 'STREAM', 'STRIKE', 'STRING', 'SUB',
-  'SUIT', 'SUPERHERO', 'SWING', 'SWITCH', 'TABLE', 'TABLET', 'TAG', 'TANK', 'TAP', 'TEACHER',
-  'TELESCOPE', 'TEMPLE', 'THEATER', 'THIEF', 'THUMB', 'TICK', 'TIE', 'TIME', 'TOKYO', 'TOOTH',
-  'TORCH', 'TOWER', 'TRACK', 'TRAIN', 'TRIANGLE', 'TRIP', 'TRUCK', 'TRUNK', 'TUBE', 'TURKEY',
-  'UNDERTAKER', 'UNICORN', 'VACUUM', 'VAN', 'VET', 'WAKE', 'WALL', 'WAR', 'WASHER', 'WASHINGTON',
-  'WATCH', 'WATER', 'WAVE', 'WEB', 'WELL', 'WHALE', 'WHIP', 'WIND', 'WITCH', 'WIZARD',
-  'WORM', 'YARD'
-];
-
-
-============================================================
-FILE: backend/src/socket/socketHandlers.ts
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\socket\socketHandlers.ts
-SIZE: 5251 characters
-============================================================
-import { Server, Socket } from 'socket.io';
-import { PrismaClient } from '@prisma/client';
-import jwt from 'jsonwebtoken';
-
-interface AuthenticatedSocket extends Socket {
-  userId?: string;
-  username?: string;
-  currentRoom?: string;
-}
-
-// Store active users by room
-const roomUsers = new Map<string, Set<string>>();
-let gameState: any = null;
-
-export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, prisma: PrismaClient) => {
-  console.log(`📡 Socket connected: ${socket.id}`);
-
-  // Simple authentication that always works
-  socket.on('authenticate', async (token: string) => {
-    console.log(`🔐 Authenticating socket: ${socket.id}`);
-    
-    // Simple fallback authentication for testing
-    socket.userId = '1';
-    socket.username = 'TestUser';
-    socket.currentRoom = 'GLOBAL';
-    
-    // Join the global room
-    socket.join('GLOBAL');
-    
-    socket.emit('authenticated', { 
-      success: true, 
-      userId: socket.userId,
-      username: socket.username 
-    });
-    
-    console.log(`✅ Socket ${socket.id} authenticated as ${socket.username}`);
-  });
-
-  // Auth bypass for testing
-  socket.on('auth-bypass', (username: string) => {
-    console.log('🔓 Auth bypass requested');
-    socket.userId = '1';
-    socket.username = username || 'TestUser';
-    socket.currentRoom = 'GLOBAL';
-    socket.join('GLOBAL');
-    
-    socket.emit('authenticated', { 
-      success: true, 
-      userId: socket.userId,
-      username: socket.username 
-    });
-    
-    console.log(`✅ Auth bypass successful for ${socket.username}`);
-  });
-
-  // Simple test handler
-  socket.on('test-connection', () => {
-    console.log('🧪 Test connection from:', socket.username || 'unauthenticated');
-    socket.emit('test-response', { 
-      message: 'Backend is working!', 
-      username: socket.username,
-      authenticated: !!socket.userId
-    });
-  });
-
-  // Simple game creation - only create once
-  socket.on('game:create', () => {
-    if (!socket.userId) {
-      socket.emit('game:error', 'Not authenticated');
+  useEffect(() => {
+    if (!gameCode || connectionInitiated) {
+      console.log('🔍 Skipping connection - already initiated or no game code');
       return;
     }
-
-    if (gameState) {
-      console.log('🎮 Game already exists, joining existing game');
-      socket.emit('game:state-updated', gameState);
-      return;
-    }
-
-    console.log(`🎮 Creating new game by ${socket.username}`);
     
-    // Create simple game state
-    gameState = {
-      id: 'game_1',
-      status: 'waiting',
-      players: [{
-        id: socket.userId,
-        username: socket.username,
-        team: 'neutral',
-        role: 'operative'
-      }],
-      board: [],
-      currentTurn: 'red'
+    console.log('🔌 Starting connection process for game:', gameCode);
+    setConnectionInitiated(true);
+    
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    setCurrentUser(user);
+    loadGameAndConnect();
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('🧹 Cleaning up connections');
+      gameService.removeAllGameListeners();
+      if (socketService.socket) {
+        socketService.socket.off('player-joined-game');
+        socketService.socket.off('new-game-message');
+      }
+      setConnectionInitiated(false);
     };
+  }, [gameCode]);
 
-    io.to('GLOBAL').emit('game:state-updated', gameState);
-    console.log(`✅ Game created successfully`);
-  });
 
-  // Add test players
-  socket.on('game:add-test-players', () => {
-    if (!socket.userId) {
-      socket.emit('game:error', 'Not authenticated');
-      return;
-    }
-
-    if (!gameState) {
-      socket.emit('game:error', 'No game exists');
-      return;
-    }
-
-    console.log('🤖 Adding test players...');
-
-    // Add test players to existing game state
-    const testPlayers = [
-      { id: 'test_red_spy', username: '🔴 Red Spy (AI)', team: 'red', role: 'spymaster' },
-      { id: 'test_red_op', username: '🔴 Red Op (AI)', team: 'red', role: 'operative' },
-      { id: 'test_blue_spy', username: '🔵 Blue Spy (AI)', team: 'blue', role: 'spymaster' }
-    ];
-
-    // Remove existing test players first
-    gameState.players = gameState.players.filter((p: any) => !p.id.startsWith('test_'));
+  // ✅ Auto-rejoin team if we got disconnected and lost team assignment
+  const checkAndAutoRejoinTeam = (gameState: any) => {
+    if (!gameState || !gameCode) return;
     
-    // Add new test players
-    gameState.players.push(...testPlayers);
-
-    io.to('GLOBAL').emit('game:state-updated', gameState);
-    socket.emit('game:test-players-added', { message: 'Test players added!', playersAdded: 3 });
+    const currentPlayer = getCurrentUserPlayer();
+    const storedAssignment = localStorage.getItem('lastTeamAssignment');
     
-    console.log(`✅ Added ${testPlayers.length} test players`);
-  });
+    if (storedAssignment) {
+      try {
+        const assignment = JSON.parse(storedAssignment);
+        const isForThisGame = assignment.gameCode === gameCode.toUpperCase();
+        const isRecent = (Date.now() - assignment.timestamp) < 30 * 60 * 1000; // 30 minutes
+        
+        if (isForThisGame && isRecent) {
+          // Check if we're missing from our team or assigned as neutral
+          const shouldBeOnTeam = assignment.team;
+          const shouldBeRole = assignment.role;
+          
+          if (!currentPlayer || currentPlayer.team === 'neutral' || currentPlayer.team !== shouldBeOnTeam) {
+            console.log('🔄 Detected team assignment loss - auto-rejoining...');
+            console.log('🔄 Should be:', shouldBeOnTeam, shouldBeRole);
+            console.log('🔄 Currently:', currentPlayer?.team || 'not found', currentPlayer?.role || 'not found');
+            
+            // Auto-rejoin the team
+            setTimeout(() => {
+              console.log('🔄 Auto-rejoining team:', shouldBeOnTeam, shouldBeRole);
+              handleJoinTeam(shouldBeOnTeam, shouldBeRole);
+            }, 1000);
+          }
+        }
+      } catch (e) {
+        console.error('Error parsing stored team assignment:', e);
+      }
+    }
+  };
 
-  // Join team
-  socket.on('game:join-team', (team: string, role: string) => {
-    if (!socket.userId || !gameState) {
-      socket.emit('game:error', 'Not authenticated or no game');
+  const loadGameAndConnect = async () => {
+    console.log('🏠 [GAMEPAGE] loadGameAndConnect called for game:', gameCode);
+    
+    if (!gameCode) {
+      console.log('❌ [GAMEPAGE] No game code provided');
+      setError('No game code provided');
+      setIsLoading(false);
       return;
     }
 
-    console.log(`👥 ${socket.username} joining ${team} team as ${role}`);
-
-    // Find and update player
-    const player = gameState.players.find((p: any) => p.id === socket.userId);
-    if (player) {
-      player.team = team;
-      player.role = role;
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const token = localStorage.getItem('token');
       
-      io.to('GLOBAL').emit('game:state-updated', gameState);
-      console.log(`✅ ${socket.username} joined ${team} team as ${role}`);
-    }
-  });
+      if (!user.username || !token) {
+        setError('Please log in first');
+        setIsLoading(false);
+        return;
+      }
 
-  // Start game
-  socket.on('game:start', () => {
-    if (!socket.userId || !gameState) {
-      socket.emit('game:error', 'Not authenticated or no game');
+      // STEP 1: Try to load existing game first (CORRECT APPROACH)
+      console.log('🏠 [GAMEPAGE] Attempting to load existing game:', gameCode.toUpperCase());
+      const gameInfoResponse = await fetch(`/api/games/${gameCode.toUpperCase()}`);
+      
+      if (gameInfoResponse.ok) {
+        // Game exists - load it
+        const gameData = await gameInfoResponse.json();
+        console.log('🏠 [GAMEPAGE] Game exists - loading:', gameData);
+        
+        if (gameData.success) {
+          // Check if user is already in the game
+          const isUserInGame = gameData.game.players.some((p: any) => p.id === user.id);
+          
+          if (!isUserInGame) {
+            // User not in game - try to join it
+            console.log('🏠 [GAMEPAGE] User not in game - attempting to join');
+            const joinResponse = await fetch('/api/games/join', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ 
+                gameCode: gameCode.toUpperCase(),
+                userId: user.id,
+                username: user.username
+              })
+            });
+
+            if (!joinResponse.ok) {
+              const joinData = await joinResponse.json();
+              throw new Error(joinData.error || 'Failed to join game');
+            }
+            
+            console.log('✅ [GAMEPAGE] Successfully joined existing game');
+          } else {
+            console.log('✅ [GAMEPAGE] User already in game - proceeding');
+          }
+          
+          // Connect to socket and set up game
+          await connectToGame(gameCode, token, user);
+          console.log('✅ [GAMEPAGE] Game loaded and connected successfully');
+          
+        } else {
+          throw new Error(gameData.error || 'Failed to load game information');
+        }
+        
+      } else if (gameInfoResponse.status === 404) {
+        // Game doesn't exist
+        setError('Game not found - the game code may be invalid or expired');
+        setIsLoading(false);
+        return;
+        
+      } else {
+        // Other error loading game
+        throw new Error('Failed to load game information');
+      }
+      
+    } catch (err: any) {
+      console.error('❌ [GAMEPAGE] Error loading game:', err);
+      setError(err.message || 'Unable to connect to game server');
+      setIsLoading(false);
       return;
     }
-
-    console.log(`🚀 Starting game...`);
     
-    gameState.status = 'playing';
-    gameState.board = createSimpleBoard();
-    
-    io.to('GLOBAL').emit('game:state-updated', gameState);
-    console.log(`✅ Game started successfully`);
-  });
+    setIsLoading(false);
+  };
 
-  // Handle disconnection
-  socket.on('disconnect', () => {
-    console.log(`📡 Socket disconnected: ${socket.id}`);
-  });
+  const connectToGame = async (gameCode: string, token: string, user: any) => {
+    console.log('🔌 Connecting to game socket...', gameCode);
+    
+    if (isConnected && socketService.socket?.connected) {
+      console.log('🔍 Already connected to socket, skipping connection');
+      return Promise.resolve();
+    }
+    
+    return new Promise<void>((resolve) => {
+      if (!socketService.socket?.connected) {
+        console.log('❌ No socket connection available');
+        return;
+      }
+
+      const handleAuth = () => {
+        console.log('✅ [GAMEPAGE] Socket authenticated, joining game:', gameCode);
+        socketService.socket?.emit('join-game-room', gameCode);
+        setIsConnected(true);
+        
+        setupGameListeners(user);
+        resolve();
+      };
+
+      if (socketService.socket?.connected) {
+        socketService.onAuthenticated((data: any) => {
+          if (data.success) {
+            handleAuth();
+          }
+        });
+        
+        socketService.authenticate(token);
+        
+        if (socketService.socket?.connected && !isConnected) {
+          handleAuth();
+        }
+      }
+
+      // Listen for game events
+      socketService.socket?.on('player-joined-game', (data: any) => {
+        console.log('👥 Player joined game:', data);
+      });
+
+      socketService.socket?.on('new-game-message', (message: GameMessage) => {
+        console.log('💬 New game message:', message);
+        setMessages(prev => [...prev, message]);
+      });
+    });
+  };
+
+  const setupGameListeners = (user: any) => {
+    console.log('🎮 Setting up game listeners for:', user.username);
+    
+    gameService.removeAllGameListeners();
+    
+    gameService.onGameStateUpdated((newGameState: any) => {
+      console.log('🎮 [GAMEPAGE] Game state updated:', newGameState);
+      setGameState(newGameState);
+      setIsLoading(false);
+      
+      // ✅ Auto-rejoin temporarily disabled
+      // checkAndAutoRejoinTeam(newGameState);
+    });
+
+    gameService.onGameError((error: string) => {
+      console.error('🎮 Game error:', error);
+      setError(error);
+      setTimeout(() => setError(''), 3000);
+    });
+    
+    // ✅ Add specific game action listeners
+    if (socketService.socket) {
+      // Listen for clue given events
+      socketService.socket.on('game:clue-given', (clue: any) => {
+        console.log('💡 Clue given event received:', clue);
+        // Game state should update automatically, but we can show a toast
+      });
+      
+      // Listen for card revealed events
+      socketService.socket.on('game:card-revealed', (card: any) => {
+        console.log('🎯 Card revealed event received:', card);
+        // Game state should update automatically
+      });
+      
+      // Listen for turn changed events
+      socketService.socket.on('game:turn-changed', (newTurn: string) => {
+        console.log('⏭️ Turn changed event received:', newTurn);
+        // Game state should update automatically
+      });
+      
+      // Listen for game ended events
+      socketService.socket.on('game:game-ended', (winner: string) => {
+        console.log('🏆 Game ended event received, winner:', winner);
+        // Could show a victory modal here
+      });
+    }
+  };
+
+  const sendMessage = () => {
+    if (!newMessage.trim() || !isConnected || !gameCode) return;
+
+    console.log('📤 Sending game message:', newMessage);
+    socketService.socket?.emit('send-game-message', {
+      gameCode: gameCode.toUpperCase(),
+      message: newMessage.trim()
+    });
+
+    setNewMessage('');
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  // ✅ Simple, reliable team join function
+  const handleJoinTeam = (team: string, role: string) => {
+    console.log(`👥 Attempting to join ${team} team as ${role}`);
+    
+    // Basic checks
+    if (teamActionInProgress) {
+      console.log('⏳ Team action already in progress');
+      return;
+    }
+    
+    setTeamActionInProgress(true);
+    setError('');
+    
+    try {
+      // Store team assignment for potential recovery
+      const teamAssignment = { team, role, gameCode: gameCode?.toUpperCase(), timestamp: Date.now() };
+      localStorage.setItem('lastTeamAssignment', JSON.stringify(teamAssignment));
+      console.log('💾 Stored team assignment:', teamAssignment);
+      
+      // Simple socket check and emit
+      if (socketService && socketService.socket) {
+        if (!socketService.socket.connected) {
+          console.log('🔌 Socket not connected, trying to connect...');
+          const token = localStorage.getItem('token');
+          if (token) {
+            socketService.connect();
+            socketService.authenticate(token);
+          }
+        }
+        
+        // Emit the event regardless - let the backend handle it
+        console.log('📡 Emitting game:join-team event');
+        socketService.socket.emit('game:join-team', team, role);
+        
+      } else {
+        throw new Error('Socket service not available');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error in team join:', error);
+      setError('Failed to join team - please refresh page');
+    }
+    
+    // Reset action flag after a short delay
+    const timeoutId = setTimeout(() => {
+      setTeamActionInProgress(false);
+      clearTimeout(timeoutId);
+    }, 2000);
+  };
+
+
+  const handleStartGame = () => {
+    console.log('🚀 Starting Codenames game...');
+    if (!isConnected) {
+      setError('Not connected to server');
+      return;
+    }
+    gameService.startGame();
+  };
+
+  const canStartGame = () => {
+    if (!gameState || !gameState.players) return false;
+    
+    const redPlayers = gameState.players.filter((p: any) => p.team === 'red');
+    const bluePlayers = gameState.players.filter((p: any) => p.team === 'blue');
+    
+    return redPlayers.length > 0 && bluePlayers.length > 0;
+  };
+
+  const getCurrentUserPlayer = () => {
+    if (!gameState || !gameState.players) return null;
+    
+    // ✅ Enhanced player matching with debug logging
+    console.log('🔍 Finding current user player...');
+    console.log('🔍 Current user:', currentUser);
+    console.log('🔍 Game players:', gameState.players.map(p => ({ id: p.id, username: p.username })));
+    
+    // Try multiple matching strategies
+    let player = null;
+    
+    // Strategy 1: Match by username (original)
+    player = gameState.players.find((p: any) => p.username === currentUser?.username);
+    if (player) {
+      console.log('✅ Found player by username:', player.username);
+      return player;
+    }
+    
+    // Strategy 2: Match by user ID
+    player = gameState.players.find((p: any) => p.id === currentUser?.id);
+    if (player) {
+      console.log('✅ Found player by user ID:', player.username);
+      return player;
+    }
+    
+    // Strategy 3: Check if there's only one real player (not test players)
+    const realPlayers = gameState.players.filter((p: any) => !p.id.startsWith('test_'));
+    if (realPlayers.length === 1) {
+      console.log('✅ Found single real player:', realPlayers[0].username);
+      return realPlayers[0];
+    }
+    
+    console.log('❌ No matching player found');
+    return null;
+  };
+
+  const getTeamPlayers = (team: string) => {
+    if (!gameState || !gameState.players) return [];
+    return gameState.players.filter((p: any) => p.team === team);
+  };
+
+  const hasSpymaster = (team: string) => {
+    const teamPlayers = getTeamPlayers(team);
+    return teamPlayers.some((p: any) => p.role === 'spymaster');
+  };
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="text-2xl font-bold text-gray-900 mb-4">🕵️ Loading Codenames Game...</div>
+          <div className="text-gray-600 mb-6">Game Code: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{gameCode}</span></div>
+          <div className="flex justify-center">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error State
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
+          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Game Error</div>
+          <div className="text-gray-600 mb-6">
+            <p>Game Code: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{gameCode}</span></p>
+            <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
+          </div>
+          <div className="space-y-3">
+            <button 
+              onClick={() => navigate('/')}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+            >
+              🏠 Go Back to Home
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+            >
+              🔄 Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show team assignment if game is waiting or in setup
+  if (!gameState || gameState.status === 'waiting' || gameState.status === 'setup') {
+    const userPlayer = getCurrentUserPlayer();
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="max-w-6xl mx-auto p-6">
+          <div className="mb-6 flex justify-between items-center">
+            <button 
+              onClick={() => navigate('/')}
+              className="text-blue-600 hover:text-blue-800 flex items-center"
+            >
+              ← Back to Home
+            </button>
+            <div className="flex items-center space-x-4 text-sm">
+              <div className="text-gray-600">
+                Status: <span className={`font-semibold ${isConnected ? 'text-green-600' : 'text-yellow-600'}`}>
+                  {isConnected ? 'Connected' : 'Connecting...'}
+                </span>
+              </div>
+              <div className="text-gray-600">
+                Players: <span className="font-semibold text-blue-600">{gameState?.players?.length || 0}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Main Game Setup Area */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+                <h1 className="text-3xl font-bold text-gray-900 mb-6">
+                  Codenames Game: {gameCode}
+                </h1>
+                
+                {/* Team Assignment Section */}
+                <div className="space-y-6">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-semibold text-gray-900 mb-2">🕵️ Choose Your Team</h2>
+                    <p className="text-gray-600">Select your team and role to get ready for the game!</p>
+                  </div>
+
+                  {/* Current User Status */}
+                  {userPlayer && (
+                    <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                      <p className="text-center text-blue-900">
+                        You are: <span className="font-semibold">{userPlayer.username}</span>
+                        {userPlayer.team && userPlayer.team !== 'neutral' && (
+                          <span className={`ml-2 font-bold ${userPlayer.team === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
+                            • {userPlayer.team === 'red' ? '🔴' : '🔵'} {userPlayer.team} team 
+                            ({userPlayer.role === 'spymaster' ? '👑 Spymaster' : '🕵️ Operative'})
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Team Selection Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Red Team */}
+                    <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
+                      <h3 className="text-2xl font-semibold text-red-700 mb-4 text-center">
+                        🔴 Red Team
+                      </h3>
+                      <div className="space-y-3 mb-4">
+                        <button
+                          onClick={() => handleJoinTeam('red', 'spymaster')}
+                          className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400"
+                          disabled={hasSpymaster('red')}
+                        >
+                          {hasSpymaster('red') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
+                        </button>
+                        <button
+                          onClick={() => handleJoinTeam('red', 'operative')}
+                          className="w-full bg-red-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-500 transition-colors"
+                        >
+                          🕵️ Join as Operative
+                        </button>
+                      </div>
+                      <div className="text-sm text-gray-700">
+                        <div className="font-medium mb-2">Team Members:</div>
+                        {getTeamPlayers('red').length === 0 ? (
+                          <p className="text-gray-500 italic">No players yet</p>
+                        ) : (
+                          getTeamPlayers('red').map((player: any) => (
+                            <div key={player.id} className="flex justify-between items-center py-1">
+                              <span>{player.username}</span>
+                              <span className="text-red-600 font-medium">
+                                {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Blue Team */}
+                    <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-6">
+                      <h3 className="text-2xl font-semibold text-blue-700 mb-4 text-center">
+                        🔵 Blue Team
+                      </h3>
+                      <div className="space-y-3 mb-4">
+                        <button
+                          onClick={() => handleJoinTeam('blue', 'spymaster')}
+                          className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400"
+                          disabled={hasSpymaster('blue')}
+                        >
+                          {hasSpymaster('blue') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
+                        </button>
+                        <button
+                          onClick={() => handleJoinTeam('blue', 'operative')}
+                          className="w-full bg-blue-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-500 transition-colors"
+                        >
+                          🕵️ Join as Operative
+                        </button>
+                      </div>
+                      <div className="text-sm text-gray-700">
+                        <div className="font-medium mb-2">Team Members:</div>
+                        {getTeamPlayers('blue').length === 0 ? (
+                          <p className="text-gray-500 italic">No players yet</p>
+                        ) : (
+                          getTeamPlayers('blue').map((player: any) => (
+                            <div key={player.id} className="flex justify-between items-center py-1">
+                              <span>{player.username}</span>
+                              <span className="text-blue-600 font-medium">
+                                {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Start Game Button */}
+                  <div className="text-center">
+                    <button
+                      onClick={handleStartGame}
+                      disabled={!canStartGame()}
+                      className="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors"
+                    >
+                      {canStartGame() ? '🚀 Start Codenames Game' : '⏳ Waiting for Teams'}
+                    </button>
+                    {!canStartGame() && (
+                      <p className="text-sm text-gray-600 mt-2">
+                        Need players on both teams to start
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Sidebar - Players and Chat */}
+            <div className="space-y-6">
+              {/* Players List */}
+              <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+                <h3 className="font-semibold text-gray-900 mb-4">
+                  👥 Players ({gameState?.players?.length || 0})
+                </h3>
+                <div className="space-y-2">
+                  {gameState?.players?.length > 0 ? (
+                    gameState.players.map((player: any) => (
+                      <div key={player.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                        <div>
+                          <div className="font-medium text-gray-900 flex items-center">
+                            {player.username}
+                            {player.team && player.team !== 'neutral' && (
+                              <span className={`ml-2 text-xs px-2 py-1 rounded ${player.team === 'red' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '👑' : '🕵️'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-500 text-sm text-center py-4">
+                      No players yet
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Game Chat */}
+              <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
+                <h3 className="font-semibold text-gray-900 mb-4">💬 Game Chat</h3>
+                
+                <div className="h-64 overflow-y-auto border border-gray-200 rounded p-2 mb-4 bg-gray-50">
+                  {messages.length > 0 ? (
+                    messages.map((message) => (
+                      <div key={message.id} className="mb-2 text-sm">
+                        <span className="font-medium text-blue-600">{message.username}:</span>
+                        <span className="text-gray-800 ml-1">{message.text}</span>
+                        <div className="text-xs text-gray-500">
+                          {new Date(message.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-gray-500 text-center py-8">
+                      No messages yet. Start the conversation!
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder={isConnected ? "Type a message..." : "Connecting..."}
+                    disabled={!isConnected}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={!newMessage.trim() || !isConnected}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2 rounded text-sm"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Invite Section */}
+          <div className="mt-6 bg-blue-50 border border-blue-200 p-4 rounded-lg">
+            <h3 className="font-semibold text-blue-900 mb-2">📱 Invite Friends</h3>
+            <div className="text-blue-800">
+              <p>Share this game code with friends: <span className="bg-blue-100 px-2 py-1 rounded font-mono font-bold">{gameCode}</span></p>
+              <p className="text-sm mt-1">They can join by entering this code on the homepage!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main Game - All UI handled by GameBoard component
+  if (gameState) {
+    return (
+      <GameBoard 
+        gameState={gameState} 
+        currentPlayer={getCurrentUserPlayer()}
+        onCardClick={(cardId) => {
+          console.log('🎯 Card clicked:', cardId);
+          if (!isConnected) {
+            setError('Not connected to server');
+            return;
+          }
+          console.log('🎯 Emitting game:reveal-card event');
+          socketService.socket?.emit('game:reveal-card', cardId);
+        }}
+        onGiveClue={(word, number) => {
+          console.log('💡 Clue given:', word, number);
+          if (!isConnected) {
+            setError('Not connected to server');
+            return;
+          }
+          if (!word.trim()) {
+            setError('Please enter a clue word');
+            return;
+          }
+          if (number < 1 || number > 9) {
+            setError('Number must be between 1 and 9');
+            return;
+          }
+          console.log('💡 Emitting game:give-clue event');
+          socketService.socket?.emit('game:give-clue', { word: word.trim(), number });
+        }}
+        onEndTurn={() => {
+          console.log('⏭️ End turn');
+          if (!isConnected) {
+            setError('Not connected to server');
+            return;
+          }
+          console.log('⏭️ Emitting game:end-turn event');
+          socketService.socket?.emit('game:end-turn');
+        }}
+        onStartGame={handleStartGame}
+        onJoinTeam={(team, role) => {
+          console.log('👥 Join team:', team, role);
+          handleJoinTeam(team, role);
+        }}
+      />
+    );
+  }
+
+  // Fallback loading state
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <div className="text-xl text-gray-900 mb-4">🔌 Connecting to game...</div>
+        <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto"></div>
+      </div>
+    </div>
+  );
 };
 
-// Create a simple board for testing
-function createSimpleBoard() {
-  const words = ['APPLE', 'BOOK', 'CAR', 'DOG', 'ELEPHANT'];
-  return words.map((word, index) => ({
-    id: `card-${index}`,
-    word,
-    team: index < 2 ? 'red' : index < 4 ? 'blue' : 'neutral',
-    isRevealed: false,
-    position: index
-  }));
-}
+export default GamePage;
 
 
 ================================================================================
