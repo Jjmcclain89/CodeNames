@@ -2,21 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
+import RoomPage from './pages/RoomPage';
 import GamePage from './pages/GamePage';
 import DebugPage from './pages/DebugPage';
 import GameDebugPage from './pages/GameDebugPage';
 import authService from './services/authService';
 import socketService from './services/socketService';
 import './App.css';
-
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
-
   useEffect(() => {
     console.log('🔍 APP DEBUG: useEffect triggered');
     console.log('🔍 APP DEBUG: Timestamp:', Date.now());
+    console.log('🔍 APP DEBUG: Call stack:', new Error().stack?.split('\n').slice(0, 5).join('\n'));
     
     const initAuth = async () => {
       const token = authService.getToken();
@@ -32,10 +32,22 @@ function App() {
         if (result.success) {
           setIsAuthenticated(true);
           setUser(savedUser);
-          // Initialize socket connection with token
+          // Initialize socket connection with token - SINGLE SOURCE OF TRUTH
           console.log('🔌 App.tsx: Initializing socket connection for user:', savedUser.username);
+          console.log('🔌 App.tsx: Current socket state before connect:', {
+            hasSocket: !!socketService.socket,
+            isConnected: socketService.socket?.connected,
+            socketId: socketService.socket?.id
+          });
           
           socketService.connect();
+          
+          console.log('🔌 App.tsx: Socket state after connect:', {
+            hasSocket: !!socketService.socket,
+            isConnected: socketService.socket?.connected,
+            socketId: socketService.socket?.id
+          });
+          
           socketService.authenticate(token);
         } else {
           authService.logout();
@@ -43,28 +55,36 @@ function App() {
       }
       setIsLoading(false);
     };
-    
     initAuth();
   }, []);
-
   const handleLogin = (userData: any, token: string) => {
     console.log('🔍 LOGIN DEBUG: handleLogin called for user:', userData.username);
+    console.log('🔍 LOGIN DEBUG: Current socket state before login connect:', {
+      hasSocket: !!socketService.socket,
+      isConnected: socketService.socket?.connected,
+      socketId: socketService.socket?.id
+    });
     
     setIsAuthenticated(true);
     setUser(userData);
-    // Connect to socket after successful login
+    // Connect to socket after successful login - SINGLE SOURCE OF TRUTH
     console.log('🔌 App.tsx: Connecting socket after login for:', userData.username);
     socketService.connect();
+    
+    console.log('🔍 LOGIN DEBUG: Socket state after login connect:', {
+      hasSocket: !!socketService.socket,
+      isConnected: socketService.socket?.connected,
+      socketId: socketService.socket?.id
+    });
+    
     socketService.authenticate(token);
   };
-
   const handleLogout = () => {
     authService.logout();
     socketService.disconnect();
     setIsAuthenticated(false);
     setUser(null);
   };
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -72,7 +92,6 @@ function App() {
       </div>
     );
   }
-
   return (
     <Router>
       <div className="App min-h-screen bg-gray-50">
@@ -92,53 +111,42 @@ function App() {
             )}
           </div>
         </header>
-        
         <main className="container mx-auto p-4">
           <Routes>
-            {/* Login Route */}
             <Route
               path="/login"
               element={
-                !isAuthenticated ? (
-                  <LoginPage onLogin={handleLogin} />
-                ) : (
-                  <Navigate to="/" replace />
-                )
+                !isAuthenticated ?
+                <LoginPage onLogin={handleLogin} /> :
+                <Navigate to="/" replace />
               }
             />
-            
-            {/* Home Route */}
             <Route
               path="/"
               element={
-                isAuthenticated ? (
-                  <HomePage />
-                ) : (
-                  <Navigate to="/login" replace />
-                )
+                isAuthenticated ?
+                <HomePage /> :
+                <Navigate to="/login" replace />
               }
             />
-            
-            {/* Game Route - Direct from homepage */}
             <Route
-              path="/game/:gameCode"
+              path="/room/:roomCode"
               element={
-                isAuthenticated ? (
-                  <GamePage />
-                ) : (
-                  <Navigate to="/login" replace />
-                )
+                isAuthenticated ?
+                <RoomPage /> :
+                <Navigate to="/login" replace />
               }
             />
-            
-            {/* Debug Routes */}
+            <Route path="/game" element={<GamePage />} />
             <Route path="/debug-game" element={<GameDebugPage />} />
-            <Route path="/debug" element={<DebugPage />} />
-          </Routes>
+                      <Route
+              path="/debug"
+              element={<DebugPage />}
+            />
+            </Routes>
         </main>
       </div>
     </Router>
   );
 }
-
 export default App;

@@ -197,7 +197,7 @@ const HomePage: React.FC = () => {
         console.log('🎉 Navigating to room:', data.gameCode);
         // Refresh games list before navigating
         loadGamesList();
-        navigate(`/room/${data.gameCode}`);
+        navigate(`/game/${data.gameCode}`);
       } else {
         setError(data.error || 'Failed to create game');
       }
@@ -237,7 +237,7 @@ const HomePage: React.FC = () => {
       
       if (data.success && data.gameCode) {
         console.log('🎉 Navigating to room:', data.gameCode);
-        navigate(`/room/${data.gameCode}`);
+        navigate(`/game/${data.gameCode}`);
       } else {
         setError(data.error || 'Failed to join game');
       }
@@ -270,7 +270,7 @@ const HomePage: React.FC = () => {
       if (data.success) {
         console.log('🎉 Navigating to room:', gameCode);
         console.log('🎮 [HOMEPAGE] Navigating to room:', gameCode);
-        navigate(`/room/${gameCode}`);
+        navigate(`/game/${gameCode}`);
         console.log('🎮 [HOMEPAGE] Navigation called');
       } else {
         setError(data.error || 'Failed to join game');

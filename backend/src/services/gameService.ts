@@ -215,10 +215,11 @@ export class GameService {
       if (success) {
         this.playerGameMap.delete(playerId);
         
-        // If game is empty, clean it up
+        // Don't immediately delete empty games - they might be rejoined
         const gameState = game.getGame();
         if (gameState.players.length === 0) {
-          this.deleteGame(gameState.id);
+          console.log(`🎯 Game ${gameState.id} is now empty but keeping it alive for potential reconnection`);
+          // this.deleteGame(gameState.id); // Commented out - let cleanupInactiveGames handle this later
         }
       }
       return success;
@@ -349,6 +350,42 @@ export class GameService {
       activePlayers: this.playerGameMap.size,
       gameCodes: this.gameCodes.size
     };
+  }
+
+  // Get all active games for the games list API
+  getAllActiveGames(): Array<{
+    code: string;
+    id: string;
+    status: string;
+    playerCount: number;
+    players: string[];
+    createdAt: string;
+    lastActivity: string;
+  }> {
+    const activeGames: any[] = [];
+    
+    // Iterate over ALL games (not just gameCodes) to catch games created via createGameForRoom
+    for (const [gameId, gameWithMeta] of this.games.entries()) {
+      const gameState = gameWithMeta.model.getGame();
+      
+      // Use roomCode as the display code (works for both room-based and code-based games)
+      const displayCode = gameState.roomCode || gameId.substring(0, 6).toUpperCase();
+      
+      activeGames.push({
+        code: displayCode,
+        id: gameState.id,
+        status: gameState.status,
+        playerCount: gameState.players.length,
+        players: gameState.players.map((p: any) => p.username),
+        createdAt: gameState.createdAt || new Date().toISOString(),
+        lastActivity: gameWithMeta.lastActivity.toISOString()
+      });
+    }
+    
+    // Sort by most recent activity
+    return activeGames.sort((a, b) => 
+      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+    );
   }
 
   // Cleanup inactive games

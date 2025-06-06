@@ -640,53 +640,20 @@ io.on('connection', (socket) => {
     // Join the new game room
     socket.join(gameCode);
     
-    // Import gameRooms from routes
-    const { gameRooms } = require('./routes/games');
-    const gameRoom = gameRooms.get(gameCode);
-    
-    if (gameRoom) {
-      // Update player socket ID in game room
-      const player = gameRoom.players.find((p: any) => p.username === user.username);
-      if (player) {
-        player.socketId = socket.id;
-      }
-      
-      // Notify others in the room
-      socket.to(gameCode).emit('player-joined-room', {
-        player: { username: user.username, id: user.id },
-        message: `${user.username} joined the game`,
-        playerCount: gameRoom.players.length
-      });
-      
-      // Send current room state to the joining player
-      socket.emit('room-state', {
-        gameCode: gameCode,
-        players: gameRoom.players.map((p: any) => ({
-          id: p.id,
-          username: p.username,
-          joinedAt: p.joinedAt
-        })),
-        messages: gameRoom.messages.slice(-20)
-      });
-      
-      console.log(`✅ User ${user.username} joined game room ${gameCode}`);
-    } else {
-      socket.emit('error', { message: 'Game room not found' });
-    }
-    
-    // CRITICAL: Ensure the user is added to the actual game state (IMMEDIATE - no setTimeout)
-    let game = gameService.getGameForRoom(gameCode);
+    // Get or create game using gameService
+    let game = gameService.getGameByCode(gameCode);
     if (!game) {
       console.log(`🎮 Creating new game for room: ${gameCode}`);
-      game = gameService.createGameForRoom(gameCode);
+      game = gameService.createGameWithCode(gameCode, user.id);
     }
     
     // Add player to game if not already present
     console.log('🎮 Adding player to game:');
     console.log('🎮 Game ID:', game.getId());
     console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
-    const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+    const success = gameService.addPlayerToGameByCode(gameCode, user.id, user.username, socket.id);
     console.log('🎮 Add player result:', success);
+    
     if (success) {
       console.log(`✅ Added ${user.username} to game state`);
     } else {
@@ -702,6 +669,12 @@ io.on('connection', (socket) => {
     // Also send to others in the room
     console.log('🎮 Broadcasting game state to room:', gameCode);
     socket.to(gameCode).emit('game:state-updated', gameState);
+    
+    // Notify others that player joined
+    socket.to(gameCode).emit('player-joined-room', {
+      player: { username: user.username, id: user.id },
+      message: `${user.username} joined the game`
+    });
   });
 
   socket.on('send-room-message', (data: { gameCode: string; message: string }) => {
@@ -714,34 +687,18 @@ io.on('connection', (socket) => {
     const { gameCode, message } = data;
     console.log(`💬 Room message from ${user.username} in ${gameCode}: ${message}`);
     
-    const { gameRooms } = require('./routes/games');
-    const gameRoom = gameRooms.get(gameCode);
+    const roomMessage = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      username: user.username,
+      userId: user.id,
+      text: message,
+      timestamp: new Date().toISOString()
+    };
     
-    if (gameRoom) {
-      const roomMessage = {
-        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        username: user.username,
-        userId: user.id,
-        text: message,
-        timestamp: new Date().toISOString()
-      };
-      
-      // Add to room messages
-      gameRoom.messages.push(roomMessage);
-      
-      // Keep only last 50 messages
-      if (gameRoom.messages.length > 50) {
-        gameRoom.messages = gameRoom.messages.slice(-50);
-      }
-      
-      // Broadcast to all users in the room
-      io.to(gameCode).emit('new-room-message', roomMessage);
-    } else {
-      socket.emit('error', { message: 'Game room not found' });
-    }
+    // Broadcast to all users in the room (using socket rooms)
+    io.to(gameCode).emit('new-room-message', roomMessage);
   });
 
-  
   socket.on('disconnect', () => {
     const user = connectedUsers.get(socket.id);
     if (user) {

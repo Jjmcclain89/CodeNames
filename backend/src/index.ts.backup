@@ -1,18 +1,4 @@
-#!/usr/bin/env python3
-import os
-import shutil
-from datetime import datetime
-
-def emergency_backend_fix():
-    """
-    Emergency fix for broken backend - revert to working state and apply minimal changes
-    """
-    print("🚨 EMERGENCY: Fixing broken backend...")
-    
-    # First, let's create a clean working version of the backend index.ts
-    # Based on the original structure from the uploaded files
-    
-    working_backend_content = '''import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -44,6 +30,7 @@ console.log('📦 Express middleware configured');
 const users = new Map<string, any>();
 const rooms = new Map<string, any>();
 const connectedUsers = new Map<string, any>();
+const userRooms = new Map<string, string>(); // Track which room each user is in
 
 // Debug function to log users
 function logUsers() {
@@ -206,68 +193,165 @@ function addGameHandlers(socket: any, io: any) {
   // Game creation and management
   socket.on('game:create', () => {
     try {
-      const roomCode = 'GLOBAL'; // For now, use global room for games
-      const game = gameService.createGameForRoom(roomCode);
+      // Get user's current room instead of hardcoded GLOBAL
+      const currentRoom = userRooms.get(socket.id);
+      if (!currentRoom) {
+        socket.emit('game:error', 'Not in a game room');
+        return;
+      }
+      const roomCode = currentRoom;
+      
+      // Join existing game or create new one (DON'T always create new)
+      let game = gameService.getGameForRoom(roomCode);
+      if (!game) {
+        console.log('🎮 No existing game for room:', roomCode, '- creating new one');
+        game = gameService.createGameForRoom(roomCode);
+      } else {
+        console.log('🎮 Found existing game for room:', roomCode, '- joining it');
+      }
       
       // Add player to game
+      console.log('🎮 Adding player to game:');
+      console.log('🎮 Game ID:', game.getId());
+      console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
       const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+      console.log('🎮 Add player result:', success);
       
       if (success) {
         const gameState = game.getGame();
         socket.emit('game:state-updated', gameState);
         socket.to(roomCode).emit('game:player-joined', gameState.players.find((p: any )=> p.id === user.id));
-        console.log('🎮 Game created for room:', roomCode, 'by:', user.username);
+        console.log('🎮 Player', user.username, 'joined game in room:', roomCode);
       } else {
-        socket.emit('game:error', 'Failed to create game');
+        socket.emit('game:error', 'Failed to join game');
       }
     } catch (error) {
-      console.error('❌ Error creating game:', error);
-      socket.emit('game:error', 'Failed to create game');
+      console.error('❌ Error joining/creating game:', error);
+      socket.emit('game:error', 'Failed to join game');
     }
   });
 
   socket.on('game:start', () => {
     try {
+      console.log('\n🚀 [GAME START] Attempting to start game for user:', user.username, 'ID:', user.id);
+      
+      // First check if user is in a game
+      const existingGame = gameService.getGameByPlayer(user.id);
+      console.log('🚀 [GAME START] User game lookup result:', !!existingGame);
+      
+      if (!existingGame) {
+        console.log('❌ [GAME START] User not in any game - checking current room');
+        const currentRoom = userRooms.get(socket.id);
+        console.log('🚀 [GAME START] Current room:', currentRoom);
+        
+        if (currentRoom) {
+          // Try to find/create game for current room
+          let game = gameService.getGameForRoom(currentRoom);
+          if (!game) {
+            console.log('🚀 [GAME START] No game for room, creating one');
+            game = gameService.createGameForRoom(currentRoom);
+          }
+          
+          // Add user to game
+          const addResult = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+          console.log('🚀 [GAME START] Added user to game:', addResult);
+        }
+      }
+      
+      // Now try to start the game
       const result = gameService.startGame(user.id);
+      console.log('🚀 [GAME START] Start game result:', result);
       
       if (result.success) {
         const game = gameService.getGameByPlayer(user.id);
         if (game) {
           const gameState = game.getGame();
+          console.log('🚀 [GAME START] Broadcasting game state to room:', gameState.roomCode);
+          console.log('🚀 [GAME START] Game status:', gameState.status);
+          console.log('🚀 [GAME START] Players in game:', gameState.players.length);
           io.to(gameState.roomCode).emit('game:state-updated', gameState);
-          console.log('🚀 Game started by:', user.username);
+          console.log('✅ [GAME START] Game started successfully by:', user.username);
         }
       } else {
+        console.log('❌ [GAME START] Failed to start game:', result.error);
         socket.emit('game:error', result.error || 'Failed to start game');
       }
     } catch (error) {
-      console.error('❌ Error starting game:', error);
-      socket.emit('game:error', 'Failed to start game');
+      console.error('❌ [GAME START] Exception during game start:', error);
+      console.error('❌ [GAME START] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
+      socket.emit('game:error', 'Failed to start game: ' + (error instanceof Error ? error.message : String(error)));
     }
   });
 
   socket.on('game:join-team', (team: string, role: string) => {
     try {
+      console.log(`\n🏆 [TEAM ASSIGNMENT] ${user.username} wants to join ${team} team as ${role}`);
+      
       // Get or create game for current room
-      const roomCode = 'GLOBAL';
+      const currentRoom = userRooms.get(socket.id);
+      console.log(`🏆 [ROOM CHECK] ${user.username} is in room:`, currentRoom);
+      
+      if (!currentRoom) {
+        console.log(`❌ [ROOM ERROR] ${user.username} not in a game room`);
+        socket.emit('game:error', 'Not in a game room');
+        return;
+      }
+      
+      const roomCode = currentRoom;
       let game = gameService.getGameForRoom(roomCode);
+      console.log(`🏆 [GAME LOOKUP] Game exists for room ${roomCode}:`, !!game);
       
       if (!game) {
+        console.log(`🏆 [GAME CREATE] Creating new game for ${roomCode} during team assignment`);
         game = gameService.createGameForRoom(roomCode);
         gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
       }
 
+      // Log detailed game state before assignment
+      const preState = game.getGame();
+      console.log(`🏆 [PRE-ASSIGNMENT] Game ${game.getId()} state:`);
+      console.log(`🏆 [PRE-ASSIGNMENT] Total players: ${preState.players.length}`);
+      preState.players.forEach((p, i) => {
+        console.log(`  ${i+1}. ${p.username} (${p.id}) - ${p.team}/${p.role} - Online: ${p.isOnline}`);
+      });
+      
+      // Check if player exists in game before assignment
+      const existingGame = gameService.getGameByPlayer(user.id);
+      console.log(`🏆 [PLAYER CHECK] ${user.username} exists in a game:`, !!existingGame);
+      
+      if (!existingGame) {
+        console.log(`❌ [PLAYER ERROR] ${user.username} not found in any game - this should not happen!`);
+        // Try to add them
+        const addResult = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+        console.log(`🏆 [PLAYER FIX] Attempted to add ${user.username} to game:`, addResult);
+      }
+      
+      // Attempt team assignment
+      console.log(`🏆 [ASSIGNMENT] Calling assignPlayerToTeam for ${user.username}`);
       const result = gameService.assignPlayerToTeam(user.id, team as any, role as any);
+      console.log(`🏆 [ASSIGNMENT] Result:`, result);
       
       if (result.success) {
         const gameState = game.getGame();
+        console.log(`🏆 [SUCCESS] ${user.username} successfully joined ${team} team as ${role}`);
+        console.log(`🏆 [SUCCESS] Broadcasting updated game state to room ${roomCode}`);
+        
+        // Log final state
+        console.log(`🏆 [FINAL STATE] Game now has ${gameState.players.length} players:`);
+        gameState.players.forEach((p, i) => {
+          console.log(`  ${i+1}. ${p.username} - ${p.team}/${p.role}`);
+        });
+        
         io.to(roomCode).emit('game:state-updated', gameState);
-        console.log('👥 Player', user.username, 'joined', team, 'team as', role);
+        console.log(`👥 [BROADCAST COMPLETE] All players in ${roomCode} notified of ${user.username} joining ${team} team`);
       } else {
+        console.log(`❌ [ASSIGNMENT FAILED] ${user.username} could not join ${team} team as ${role}: ${result.error}`);
         socket.emit('game:error', result.error || 'Failed to join team');
       }
+      
+      console.log(`🏆 [TEAM ASSIGNMENT] Completed for ${user.username}\n`);
     } catch (error) {
-      console.error('❌ Error joining team:', error);
+      console.error(`❌ [TEAM ASSIGNMENT ERROR] Error for ${user.username}:`, error);
       socket.emit('game:error', 'Failed to join team');
     }
   });
@@ -367,6 +451,8 @@ function addGameHandlers(socket: any, io: any) {
   socket.on('game:request-state', () => {
     try {
       console.log('🔍 Game state requested by:', user.username);
+      const currentRoom = userRooms.get(socket.id);
+      console.log('🔍 User is in room:', currentRoom);
       
       // Try to find existing game for user
       const game = gameService.getGameByPlayer(user.id);
@@ -442,11 +528,16 @@ function getOrCreateGlobalRoom() {
 }
 
 // Socket handlers
+let authCounter = 0;
+
 io.on('connection', (socket) => {
   console.log('📡 Socket connected:', socket.id);
   
   socket.on('authenticate', (token: string) => {
-    console.log('🔐 Socket authentication attempt for socket:', socket.id);
+    authCounter++;
+    console.log('🔐 Socket authentication attempt #' + authCounter + ' for socket:', socket.id);
+    console.log('🔐 Total connected sockets:', io.engine.clientsCount);
+    console.log('🔐 Total connectedUsers in memory:', connectedUsers.size);
     console.log('🔐 Received token type:', typeof token);
     console.log('🔐 Token value:', token ? token.substring(0, 30) + '...' : 'null/undefined');
     
@@ -462,7 +553,8 @@ io.on('connection', (socket) => {
       
       // Join global room automatically for Phase 1
       const globalRoom = getOrCreateGlobalRoom();
-      globalRoom.users.set(socket.id, user);
+      
+            globalRoom.users.set(socket.id, user);
       socket.join('GLOBAL');
       
       socket.emit('authenticated', { 
@@ -509,7 +601,8 @@ io.on('connection', (socket) => {
     
     // Add to global room messages
     const globalRoom = getOrCreateGlobalRoom();
-    globalRoom.messages.push(message);
+      
+          globalRoom.messages.push(message);
     
     // Keep only last 50 messages
     if (globalRoom.messages.length > 50) {
@@ -531,6 +624,9 @@ io.on('connection', (socket) => {
     }
     
     console.log(`🎮 User ${user.username} joining game room: ${gameCode}`);
+    
+    // Track which room this user is in
+    userRooms.set(socket.id, gameCode);
     
     // Leave any previous game rooms
     const socketRooms = Array.from(socket.rooms);
@@ -578,29 +674,34 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'Game room not found' });
     }
     
-    // CRITICAL: Also ensure the user is added to the actual game state
-    setTimeout(() => {
-      let game = gameService.getGameForRoom(gameCode);
-      if (!game) {
-        console.log(`🎮 Creating new game for room: ${gameCode}`);
-        game = gameService.createGameForRoom(gameCode);
-      }
-      
-      // Add player to game if not already present
-      const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
-      if (success) {
-        console.log(`✅ Added ${user.username} to game state`);
-      } else {
-        console.log(`ℹ️  ${user.username} already in game state`);
-      }
-      
-      // Always send current game state to the player
-      const gameState = game.getGame();
-      socket.emit('game:state-updated', gameState);
-      
-      // Also send to others in the room
-      socket.to(gameCode).emit('game:state-updated', gameState);
-    }, 100);
+    // CRITICAL: Ensure the user is added to the actual game state (IMMEDIATE - no setTimeout)
+    let game = gameService.getGameForRoom(gameCode);
+    if (!game) {
+      console.log(`🎮 Creating new game for room: ${gameCode}`);
+      game = gameService.createGameForRoom(gameCode);
+    }
+    
+    // Add player to game if not already present
+    console.log('🎮 Adding player to game:');
+    console.log('🎮 Game ID:', game.getId());
+    console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
+    const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
+    console.log('🎮 Add player result:', success);
+    if (success) {
+      console.log(`✅ Added ${user.username} to game state`);
+    } else {
+      console.log(`ℹ️  ${user.username} already in game state`);
+    }
+    
+    // Always send current game state to the player
+    const gameState = game.getGame();
+    console.log('🎮 BEFORE sending game state to:', user.username);
+    console.log('🎮 Game players:', gameState.players.map((p: any) => `${p.username}(${p.team}/${p.role})`));
+    socket.emit('game:state-updated', gameState);
+    
+    // Also send to others in the room
+    console.log('🎮 Broadcasting game state to room:', gameCode);
+    socket.to(gameCode).emit('game:state-updated', gameState);
   });
 
   socket.on('send-room-message', (data: { gameCode: string; message: string }) => {
@@ -648,6 +749,9 @@ io.on('connection', (socket) => {
       
       // Remove from global room
       const globalRoom = getOrCreateGlobalRoom();
+      
+      // Clean up room tracking
+      userRooms.delete(socket.id);
       globalRoom.users.delete(socket.id);
       
       // Notify others
@@ -731,63 +835,4 @@ server.listen(PORT, () => {
   console.log('');
 });
 
-export default app;'''
-
-    try:
-        # Backup the broken file first
-        if os.path.exists('backend/src/index.ts'):
-            shutil.copy('backend/src/index.ts', f'backend/src/index.ts.broken_{datetime.now().strftime("%H%M%S")}')
-            print("📁 Backed up broken file")
-        
-        # Write the clean working version
-        with open('backend/src/index.ts', 'w', encoding='utf-8') as f:
-            f.write(working_backend_content)
-            
-        print("✅ Restored working backend with proper game state handling")
-        
-        # Update changelog
-        update_changelog()
-        
-        print("\n🎉 EMERGENCY FIX COMPLETE!")
-        print("✅ Backend restored to working state")
-        print("✅ Added proper game state synchronization")
-        print("✅ Fixed multiplayer team assignment issues")
-        print("✅ All TypeScript errors should be resolved")
-        
-        print("\n🚀 BACKEND SHOULD NOW START SUCCESSFULLY!")
-        print("Test the multiplayer team assignment again.")
-        
-    except Exception as e:
-        print(f"❌ Error fixing backend: {e}")
-
-def update_changelog():
-    """Update the CHANGELOG.md with this session's changes"""
-    try:
-        with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Find the "### Python Scripts Run" section and add our entry
-        new_entry = f"- Emergency Backend Fix: Restored working backend and fixed multiplayer game state synchronization (2025-05-31 {datetime.now().strftime('%H:%M')})"
-        
-        if "### Python Scripts Run" in content:
-            content = content.replace(
-                "### Python Scripts Run\n",
-                f"### Python Scripts Run\n{new_entry}\n"
-            )
-        else:
-            # Add the section if it doesn't exist
-            content = content.replace(
-                "## [Unreleased]\n",
-                f"## [Unreleased]\n\n### Python Scripts Run\n{new_entry}\n"
-            )
-        
-        with open('CHANGELOG.md', 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        print("✅ Updated CHANGELOG.md")
-        
-    except Exception as e:
-        print(f"⚠️  Could not update CHANGELOG.md: {e}")
-
-if __name__ == "__main__":
-    emergency_backend_fix()
+export default app;

@@ -1,34 +1,7 @@
 import express, { Request, Response } from 'express';
+import { gameService } from '../services/gameService';
 
 const router = express.Router();
-
-// Type definitions
-interface Player {
-  id: string;
-  username: string;
-  socketId?: string;
-  joinedAt: string;
-}
-
-interface RoomMessage {
-  id: string;
-  username: string;
-  userId: string;
-  text: string;
-  timestamp: string;
-}
-
-interface GameRoom {
-  code: string;
-  id: string;
-  status: string;
-  players: Player[];
-  messages: RoomMessage[];
-  createdAt: string;
-}
-
-// In-memory storage for games and players
-const gameRooms = new Map<string, GameRoom>();
 
 // Test endpoint
 router.get('/test', (req: Request, res: Response): void => {
@@ -40,27 +13,21 @@ router.get('/test', (req: Request, res: Response): void => {
   });
 });
 
-// List all active games - SIMPLIFIED
+// List all active games - using gameService
 router.get('/', (req: Request, res: Response): void => {
   try {
     console.log('📋 GET /api/games - Listing all games...');
     
-    const games = Array.from(gameRooms.values()).map(room => ({
-      code: room.code,
-      id: room.id,
-      status: room.status,
-      playerCount: room.players.length,
-      players: room.players.map(p => p.username),
-      createdAt: room.createdAt,
-      lastActivity: room.createdAt  // Simplified to avoid TS errors
-    }));
+    const stats = gameService.getStats();
+    const activeGames = gameService.getAllActiveGames();
     
-    console.log(`📤 Found ${games.length} active games`);
+    console.log(`📤 Found ${stats.totalGames} active games`);
     
     res.json({
       success: true,
-      games: games,
-      total: games.length,
+      games: activeGames, // Return actual active games
+      total: stats.totalGames,
+      stats: stats,
       timestamp: new Date().toISOString()
     });
     
@@ -74,7 +41,7 @@ router.get('/', (req: Request, res: Response): void => {
   }
 });
 
-// Get game info by code
+// Get game info by code - using gameService
 router.get('/:gameCode', (req: Request, res: Response): void => {
   try {
     const { gameCode } = req.params;
@@ -88,22 +55,24 @@ router.get('/:gameCode', (req: Request, res: Response): void => {
       return;
     }
     
-    const gameRoom = gameRooms.get(gameCode.toUpperCase());
+    const game = gameService.getGameByCode(gameCode.toUpperCase());
     
-    if (gameRoom) {
+    if (game) {
+      const gameState = game.getGame();
       res.json({ 
         success: true, 
         game: {
-          code: gameRoom.code,
-          id: gameRoom.id,
-          status: gameRoom.status,
-          playerCount: gameRoom.players.length,
-          players: gameRoom.players.map(p => ({
+          code: gameCode.toUpperCase(),
+          id: gameState.id,
+          status: gameState.status,
+          playerCount: gameState.players.length,
+          players: gameState.players.map(p => ({
             id: p.id,
             username: p.username,
-            joinedAt: p.joinedAt
-          })),
-          messages: gameRoom.messages.slice(-20)
+            team: p.team,
+            role: p.role,
+            isOnline: p.isOnline
+          }))
         },
         timestamp: new Date().toISOString()
       });
@@ -124,40 +93,23 @@ router.get('/:gameCode', (req: Request, res: Response): void => {
   }
 });
 
-// Create a new game
+// Create a new game - using gameService
 router.post('/create', (req: Request, res: Response): void => {
   try {
     console.log('🎮 POST /api/games/create - Creating new game...');
     
     const { userId, username } = req.body;
     
-    // Generate game code
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let gameCode = '';
-    for (let i = 0; i < 6; i++) {
-      gameCode += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    // Generate game code using gameService
+    const gameCode = gameService.generateGameCode();
     
-    // Create game room
-    const gameRoom: GameRoom = {
-      code: gameCode,
-      id: `game_${gameCode.toLowerCase()}_${Date.now()}`,
-      status: 'waiting',
-      players: [],
-      messages: [],
-      createdAt: new Date().toISOString()
-    };
+    // Create game using gameService
+    const game = gameService.createGameWithCode(gameCode, userId || 'anonymous');
     
     // Add creator if provided
-    if (username) {
-      gameRoom.players.push({
-        id: userId || `user_${Date.now()}`,
-        username: username,
-        joinedAt: new Date().toISOString()
-      });
+    if (username && userId) {
+      gameService.addPlayerToGameByCode(gameCode, userId, username, '');
     }
-    
-    gameRooms.set(gameCode, gameRoom);
     
     console.log(`✅ Created game: ${gameCode}`);
     
@@ -178,7 +130,7 @@ router.post('/create', (req: Request, res: Response): void => {
   }
 });
 
-// Join an existing game
+// Join an existing game - using gameService
 router.post('/join', (req: Request, res: Response): void => {
   try {
     const { gameCode, userId, username } = req.body;
@@ -192,9 +144,9 @@ router.post('/join', (req: Request, res: Response): void => {
       return;
     }
     
-    const gameRoom = gameRooms.get(gameCode.toUpperCase());
+    const game = gameService.getGameByCode(gameCode.toUpperCase());
     
-    if (!gameRoom) {
+    if (!game) {
       res.status(404).json({ 
         success: false,
         error: 'Game not found' 
@@ -202,15 +154,15 @@ router.post('/join', (req: Request, res: Response): void => {
       return;
     }
     
-    // Add player if not already in game
-    if (username && !gameRoom.players.find(p => p.username === username)) {
-      gameRoom.players.push({
-        id: userId || `user_${Date.now()}`,
-        username: username,
-        joinedAt: new Date().toISOString()
-      });
+    // Add player to game using gameService
+    if (username && userId) {
+      const success = gameService.addPlayerToGameByCode(gameCode.toUpperCase(), userId, username, '');
       
-      console.log(`✅ Added ${username} to game ${gameCode}`);
+      if (success) {
+        console.log(`✅ Added ${username} to game ${gameCode}`);
+      } else {
+        console.log(`ℹ️ ${username} already in game ${gameCode}`);
+      }
     }
     
     res.json({ 
@@ -230,6 +182,4 @@ router.post('/join', (req: Request, res: Response): void => {
   }
 });
 
-// Export gameRooms for socket handlers
-export { gameRooms };
 export default router;

@@ -1,23 +1,4 @@
-#!/usr/bin/env python3
-"""
-Replace the broken HomePage.tsx with a clean version that includes socket debugging tools
-"""
-
-import os
-
-def replace_clean_homepage():
-    """Replace HomePage.tsx with a clean, working version"""
-    
-    home_page_path = 'frontend/src/pages/HomePage.tsx'
-    
-    if not os.path.exists(home_page_path):
-        print(f"❌ File not found: {home_page_path}")
-        return False
-    
-    print("🔧 Replacing HomePage.tsx with clean version...")
-    
-    # The clean HomePage content from the artifact
-    clean_content = '''import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { socketService } from '../services/socketService';
 import { useNavigate } from 'react-router-dom';
 import ChatRoom from '../components/Chat/ChatRoom';
@@ -288,7 +269,9 @@ const HomePage: React.FC = () => {
       
       if (data.success) {
         console.log('🎉 Navigating to room:', gameCode);
+        console.log('🎮 [HOMEPAGE] Navigating to room:', gameCode);
         navigate(`/room/${gameCode}`);
+        console.log('🎮 [HOMEPAGE] Navigation called');
       } else {
         setError(data.error || 'Failed to join game');
       }
@@ -592,47 +575,4 @@ const HomePage: React.FC = () => {
   );
 };
 
-export default HomePage;'''
-    
-    # Create backup of broken file
-    backup_path = home_page_path + '.broken'
-    try:
-        with open(home_page_path, 'r', encoding='utf-8') as f:
-            broken_content = f.read()
-        with open(backup_path, 'w', encoding='utf-8') as f:
-            f.write(broken_content)
-        print(f"  📄 Created backup: {backup_path}")
-    except Exception as e:
-        print(f"  ⚠️ Could not create backup: {e}")
-    
-    # Write the clean content
-    with open(home_page_path, 'w', encoding='utf-8') as f:
-        f.write(clean_content)
-    
-    print("\n✅ Successfully replaced HomePage.tsx with clean version!")
-    print("\n🔧 Features included:")
-    print("  1. Socket Debug Panel at the top - shows connection status, count, and history")
-    print("  2. Manual connect/disconnect buttons for testing")
-    print("  3. Console logging buttons for detailed socket inspection")
-    print("  4. Real-time connection monitoring (updates every second)")
-    print("  5. Connection history tracking")
-    print("  6. Proper JSX structure (no syntax errors)")
-    
-    return True
-
-if __name__ == "__main__":
-    success = replace_clean_homepage()
-    if success:
-        print("\n🎯 Next Steps:")
-        print("1. Homepage should now load without errors")
-        print("2. Look for the Socket Debug Panel at the top (yellow box)")
-        print("3. Watch the 'Total Connections' count - it should stay at 0 or 1")
-        print("4. Use 'Connect Socket' button and watch connection count")
-        print("5. Try creating a room and see what happens to connections")
-        print("\n📋 What to Report:")
-        print("  - Connection count number")
-        print("  - Socket ID (should be consistent)")
-        print("  - Any patterns in connection history")
-        print("  - Console logs when clicking 'Log Socket Info'")
-    else:
-        print("\n❌ Replacement failed - check the file manually")
+export default HomePage;

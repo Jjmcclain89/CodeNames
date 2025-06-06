@@ -50,3 +50,6 @@ venv/
 
 # Prisma
 prisma/migrations/
+python/
+claude_input.txt
+project_structure.txt

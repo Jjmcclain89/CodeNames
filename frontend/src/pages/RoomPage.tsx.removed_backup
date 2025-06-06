@@ -1,0 +1,29 @@
+import React from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+
+const RoomPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { roomCode } = useParams<{ roomCode: string }>();
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center bg-white p-8 rounded-lg shadow border border-gray-200 max-w-md">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">Room Page</h1>
+        <p className="text-gray-600 mb-6">
+          Room Code: <strong>{roomCode}</strong>
+        </p>
+        <p className="text-gray-600 mb-6">
+          This is a temporary placeholder for the room page.
+        </p>
+        <button 
+          onClick={() => navigate('/')}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded"
+        >
+          Go Back to Home
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default RoomPage;

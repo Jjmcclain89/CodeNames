@@ -137,7 +137,7 @@ def main():
     
     # Generate timestamp for filename
     timestamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    output_file = f"project_structure_{timestamp}.txt"
+    output_file = f"project_structure.txt"
     
     try:
         # Map the project structure
