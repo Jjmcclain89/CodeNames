@@ -201,108 +201,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
       </div>
 
-      {/* Main Flexbox Container - Column Direction */}
-      <div className="min-h-screen flex flex-col">
-        
-        {/* Board Container - Takes up main space */}
-        <div className="flex-1 flex flex-col items-center justify-center p-4">
+      {/* Centered Layout Container */}
+      <div className="min-h-screen flex justify-center p-4">
+        <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
           
-          {/* Current Clue Display */}
-          {gameState.currentClue && (
-            <div className="mb-4 px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
-              <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                💡 {gameState.currentClue.word} ({gameState.currentClue.number})
-              </span>
-              {gameState.guessesRemaining > 0 && (
-                <span className="ml-3 text-sm text-violet-300">
-                  {gameState.guessesRemaining} left
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
-          <div className={`relative bg-gradient-to-br from-slate-800/80 via-slate-700/60 to-slate-800/80 rounded-2xl p-6 transition-all duration-500 ${getBoardGlowEffect()} border-4 border-slate-500/30 backdrop-blur-lg`}>
-            {/* Board Game Texture */}
-            <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
-            <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
-            <div className="relative z-10">
-              <div className="grid grid-cols-5 gap-3">
-                {gameState.board
-                  .sort((a, b) => a.position - b.position)
-                  .map((card) => (
-                    <Card
-                      key={card.id}
-                      card={card}
-                      isSpymaster={isSpymaster}
-                      onClick={canRevealCard ? onCardClick : undefined}
-                      disabled={!canRevealCard}
-                    />
-                  ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Controls Below Board */}
-          {canGiveClue && (
-            <div className="mt-4 bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 w-full max-w-2xl backdrop-blur-lg border border-slate-600/50">
-              <div className="flex items-end space-x-3">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={clueWord}
-                    onChange={(e) => setClueWord(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 placeholder-slate-400"
-                    placeholder="Clue word..."
-                    required
-                  />
-                </div>
-                <input
-                  type="number"
-                  min="1"
-                  max="9"
-                  value={clueNumber}
-                  onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
-                  className="w-16 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-center"
-                />
-                <button
-                  onClick={handleGiveClue}
-                  className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-2 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold shadow-lg"
-                >
-                  Give Clue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {canRevealCard && (
-            <div className="mt-4 bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
-              <p className="text-slate-200 mb-3">
-                🎯 Click a card to guess ({gameState.guessesRemaining} left)
-              </p>
-              <button
-                onClick={onEndTurn}
-                className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-colors font-semibold shadow-lg"
-              >
-                ⏭️ End Turn
-              </button>
-            </div>
-          )}
-
-          {!isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
-            <div className="mt-4 bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-4 text-center max-w-md backdrop-blur-lg border border-slate-600/50">
-              <p className="text-slate-300">
-                ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} team...
-              </p>
-            </div>
-          )}
-        </div>
-        
-        {/* Info Container - Positioned on top as overlay */}
-        <div className="absolute top-4 left-0 right-0 z-50">
-          <div className="flex items-center px-4">
-            
-            {/* Icons Container - First item */}
+          {/* Icons positioned above the game board */}
+          <div className="flex mb-2">
             <div className="flex space-x-2">
               <button
                 onClick={() => setChatVisible(!chatVisible)}
@@ -357,30 +261,101 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 )}
               </button>
             </div>
-            
-            {/* Scores Container - Absolutely centered in remaining space */}
-            <div className="flex-1 flex justify-center">
-              <div className="flex space-x-6">
-                {/* Red Team Score */}
-                <div className="bg-gradient-to-br from-red-900/80 to-red-800/60 rounded-xl shadow-xl p-4 border-l-4 border-red-400 backdrop-blur-sm w-24">
-                  <div className="text-red-200 font-semibold text-xs mb-1 text-center">🔴 Red</div>
-                  <div className="text-4xl font-bold text-red-100 drop-shadow-lg text-center">{stats.red.remaining}</div>
-                  <div className="text-xs text-red-300 text-center">words left</div>
-                </div>
-                
-                {/* Blue Team Score */}
-                <div className="bg-gradient-to-br from-blue-900/80 to-blue-800/60 rounded-xl shadow-xl p-4 border-l-4 border-blue-400 backdrop-blur-sm w-24">
-                  <div className="text-blue-200 font-semibold text-xs mb-1 text-center">🔵 Blue</div>
-                  <div className="text-4xl font-bold text-blue-100 drop-shadow-lg text-center">{stats.blue.remaining}</div>
-                  <div className="text-xs text-blue-300 text-center">words left</div>
-                </div>
+          </div>
+          
+          {/* Current Clue Display */}
+          {gameState.currentClue && (
+            <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
+              <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                💡 {gameState.currentClue.word} ({gameState.currentClue.number})
+              </span>
+              {gameState.guessesRemaining > 0 && (
+                <span className="ml-3 text-sm text-violet-300">
+                  {gameState.guessesRemaining} left
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
+          <div className={`relative bg-gradient-to-br from-slate-800/80 via-slate-700/60 to-slate-800/80 rounded-2xl p-6 transition-all duration-500 ${getBoardGlowEffect()} border-4 border-slate-500/30 backdrop-blur-lg`}>
+            {/* Board Game Texture */}
+            <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
+            <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
+            <div className="relative z-10">
+              <div className="grid grid-cols-5 gap-3">
+                {gameState.board
+                  .sort((a, b) => a.position - b.position)
+                  .map((card) => (
+                    <Card
+                      key={card.id}
+                      card={card}
+                      isSpymaster={isSpymaster}
+                      onClick={canRevealCard ? onCardClick : undefined}
+                      disabled={!canRevealCard}
+                    />
+                  ))}
               </div>
             </div>
-            
           </div>
+
+          {/* Controls Below Board */}
+          {canGiveClue && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 w-full max-w-2xl backdrop-blur-lg border border-slate-600/50">
+              <div className="flex items-end space-x-3">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={clueWord}
+                    onChange={(e) => setClueWord(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 placeholder-slate-400"
+                    placeholder="Clue word..."
+                    required
+                  />
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  max="9"
+                  value={clueNumber}
+                  onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
+                  className="w-16 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-center"
+                />
+                <button
+                  onClick={handleGiveClue}
+                  className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-2 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold shadow-lg"
+                >
+                  Give Clue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {canRevealCard && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
+              <p className="text-slate-200 mb-3">
+                🎯 Click a card to guess ({gameState.guessesRemaining} left)
+              </p>
+              <button
+                onClick={onEndTurn}
+                className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-colors font-semibold shadow-lg"
+              >
+                ⏭️ End Turn
+              </button>
+            </div>
+          )}
+
+          {!isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-4 text-center max-w-md backdrop-blur-lg border border-slate-600/50">
+              <p className="text-slate-300">
+                ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} team...
+              </p>
+            </div>
+          )}
         </div>
-        
-      </div>      {/* Side Panels */}
+      </div>
+
+      {/* Side Panels */}
       {playersVisible && (
         <div className="fixed right-4 top-20 bottom-4 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 flex flex-col backdrop-blur-xl">
           <div className="flex items-center justify-between mb-4">
@@ -466,6 +441,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               <span className={`ml-2 ${gameState.currentTurn === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
                 {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn}
               </span>
+            </div>
+            <div className="pt-2 border-t border-slate-600">
+              <div className="text-amber-200 font-medium mb-2">Team Scores:</div>
+              <div className="flex justify-between items-center">
+                <span className="text-red-400">🔴 Red:</span>
+                <span className="text-red-300 font-medium">{stats.red.remaining} left</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-blue-400">🔵 Blue:</span>
+                <span className="text-blue-300 font-medium">{stats.blue.remaining} left</span>
+              </div>
             </div>
             {currentPlayer && (
               <div className="pt-2 border-t border-slate-600">

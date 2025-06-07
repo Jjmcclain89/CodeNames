@@ -32,7 +32,7 @@ export interface GameClue {
 
 export interface CodenamesGame {
   id: string;
-  roomCode: string;
+  gameCode: string;
   status: GameStatus;
   currentTurn: TeamColor;
   players: GamePlayer[];
