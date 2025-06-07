@@ -57,12 +57,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     return gameState.players.some(p => p.team === team && p.role === 'spymaster');
   };
 
-  // Get board glow effect based on current turn
+  // Get board glow effect based on current turn - ENHANCED for visibility
   const getBoardGlowEffect = () => {
     if (gameState.currentTurn === 'red') {
-      return 'shadow-2xl shadow-red-400/50 ring-4 ring-red-300/30';
+      return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
     } else {
-      return 'shadow-2xl shadow-blue-400/50 ring-4 ring-blue-300/30';
+      return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
     }
   };
 
@@ -278,10 +278,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           )}
 
           {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
-          <div className={`relative bg-gradient-to-br from-slate-800/80 via-slate-700/60 to-slate-800/80 rounded-2xl p-6 transition-all duration-500 ${getBoardGlowEffect()} border-4 border-slate-500/30 backdrop-blur-lg`}>
-            {/* Board Game Texture */}
+          <div className={`relative bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
+            {/* Board Game Texture with Turn Indicator */}
             <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
             <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
+            {/* Turn Indicator Overlay */}
+            <div className={`absolute inset-0 rounded-2xl pointer-events-none transition-all duration-700 ${
+              gameState.currentTurn === 'red' 
+                ? 'bg-gradient-to-br from-red-500/10 via-transparent to-red-500/5' 
+                : 'bg-gradient-to-br from-blue-500/10 via-transparent to-blue-500/5'
+            }`}></div>
             <div className="relative z-10">
               <div className="grid grid-cols-5 gap-3">
                 {gameState.board
