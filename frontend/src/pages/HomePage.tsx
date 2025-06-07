@@ -14,67 +14,14 @@ interface GameListItem {
 }
 
 const HomePage: React.FC = () => {
-  // Debug state for socket monitoring
-  const [socketDebug, setSocketDebug] = useState({
-    isConnected: false,
-    socketId: '',
-    connectionCount: 0,
-    connectionHistory: [] as string[],
-    lastActivity: '',
-    socketInstance: null as any
-  });
-  
   // Regular state
   const [roomCode, setRoomCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
   const [games, setGames] = useState<GameListItem[]>([]);
   const [isLoadingGames, setIsLoadingGames] = useState(false);
   const navigate = useNavigate();
-
-  // Socket debug monitoring
-  useEffect(() => {
-    const updateDebugInfo = () => {
-      const socket = socketService.socket;
-      setSocketDebug(prev => ({
-        ...prev,
-        isConnected: socketService.isConnected,
-        socketId: socket?.id || 'Not connected',
-        socketInstance: socket,
-        lastActivity: new Date().toLocaleTimeString()
-      }));
-    };
-    
-    // Update every second
-    const interval = setInterval(updateDebugInfo, 1000);
-    
-    // Set up socket event listeners for debugging
-    if (socketService.socket) {
-      socketService.socket.on('connect', () => {
-        setSocketDebug(prev => ({
-          ...prev,
-          connectionCount: prev.connectionCount + 1,
-          connectionHistory: [...prev.connectionHistory, `Connected at ${new Date().toLocaleTimeString()}`].slice(-10)
-        }));
-      });
-      
-      socketService.socket.on('disconnect', () => {
-        setSocketDebug(prev => ({
-          ...prev,
-          connectionHistory: [...prev.connectionHistory, `Disconnected at ${new Date().toLocaleTimeString()}`].slice(-10)
-        }));
-      });
-    }
-    
-    // Initial update
-    updateDebugInfo();
-    
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
 
   // Load games list on component mount and refresh periodically
   useEffect(() => {
@@ -121,52 +68,6 @@ const HomePage: React.FC = () => {
     } else {
       const text = await response.text();
       throw new Error(`Expected JSON but got: ${contentType}. Response: ${text.substring(0, 100)}...`);
-    }
-  };
-
-  // Test backend directly first
-  const testBackendDirect = async () => {
-    setDebugInfo('Testing backend directly...');
-    try {
-      console.log('🧪 Testing backend directly: http://localhost:3001/api/games/test');
-      const response = await fetch('http://localhost:3001/api/games/test');
-      const data = await handleApiResponse(response);
-      
-      if (data.success) {
-        setDebugInfo(`✅ Backend direct test PASSED! ${data.message}`);
-        setError('');
-      } else {
-        setDebugInfo('❌ Backend direct test failed');
-        setError(JSON.stringify(data));
-      }
-    } catch (err: any) {
-      setDebugInfo('❌ Backend direct test failed');
-      setError(`Direct backend test failed: ${err.message}`);
-      console.error('Backend direct test failed:', err);
-    }
-  };
-
-  // Test API connection through proxy
-  const testApiConnection = async () => {
-    setDebugInfo('Testing API connection through proxy...');
-    try {
-      console.log('🧪 Testing: /api/games/test (through proxy)');
-      const response = await fetch('/api/games/test');
-      const data = await handleApiResponse(response);
-      
-      if (data.success) {
-        setDebugInfo(`✅ Proxy test PASSED! ${data.message}`);
-        setError('');
-        // Also refresh games list after successful test
-        loadGamesList();
-      } else {
-        setDebugInfo('❌ Proxy test failed');
-        setError(JSON.stringify(data));
-      }
-    } catch (err: any) {
-      setDebugInfo('❌ Proxy test failed');
-      setError(`Proxy test failed: ${err.message}`);
-      console.error('Proxy test failed:', err);
     }
   };
 
@@ -301,274 +202,153 @@ const HomePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto p-6">
-        {/* Socket Debug Panel */}
-        <div className="mb-6 bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4">
-          <h2 className="text-lg font-bold text-yellow-800 mb-3">🔧 Socket Debug Panel</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-            <div className="bg-white p-3 rounded border">
-              <h3 className="font-semibold text-gray-700 mb-2">Connection Status</h3>
-              <div className={`px-2 py-1 rounded text-white text-center ${socketDebug.isConnected ? 'bg-green-500' : 'bg-red-500'}`}>
-                {socketDebug.isConnected ? '✅ Connected' : '❌ Disconnected'}
-              </div>
-              <div className="mt-2 text-xs text-gray-600">
-                Socket ID: {socketDebug.socketId}
-              </div>
-            </div>
-            
-            <div className="bg-white p-3 rounded border">
-              <h3 className="font-semibold text-gray-700 mb-2">Connection Stats</h3>
-              <div className="space-y-1">
-                <div>Total Connections: <span className="font-mono font-bold text-blue-600">{socketDebug.connectionCount}</span></div>
-                <div>Last Activity: <span className="font-mono text-xs">{socketDebug.lastActivity}</span></div>
-                <div>Socket Instance: {socketDebug.socketInstance ? '✅ Exists' : '❌ Null'}</div>
-              </div>
-            </div>
-            
-            <div className="bg-white p-3 rounded border">
-              <h3 className="font-semibold text-gray-700 mb-2">Debug Actions</h3>
-              <div className="space-y-2">
-                <button 
-                  onClick={() => {
-                    console.log('🔍 Socket Service Debug:', socketService);
-                    console.log('🔍 Current Socket:', socketService.socket);
-                    console.log('🔍 Window.socketService:', (window as any).socketService);
-                  }}
-                  className="w-full bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
-                >
-                  Log Socket Info
-                </button>
-                <button 
-                  onClick={() => {
-                    socketService.connect();
-                    console.log('🔌 Manual connection attempt');
-                  }}
-                  className="w-full bg-green-500 text-white px-2 py-1 rounded text-xs hover:bg-green-600"
-                >
-                  Connect Socket
-                </button>
-                <button 
-                  onClick={() => {
-                    socketService.disconnect();
-                    console.log('🔌 Manual disconnect');
-                  }}
-                  className="w-full bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
-                >
-                  Disconnect Socket
-                </button>
-              </div>
-            </div>
-          </div>
-          
-          {socketDebug.connectionHistory.length > 0 && (
-            <div className="mt-4 bg-white p-3 rounded border">
-              <h3 className="font-semibold text-gray-700 mb-2">Connection History</h3>
-              <div className="max-h-32 overflow-y-auto">
-                {socketDebug.connectionHistory.map((event, index) => (
-                  <div key={index} className="text-xs text-gray-600 font-mono">
-                    {event}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden relative">
+      {/* Background Pattern - Matching GameBoard */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+      </div>
 
-        <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">Welcome to Codenames!</h1>
+      <div className="relative z-10 max-w-7xl mx-auto p-6">
+        {/* Hero Section with Title */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-violet-400 to-indigo-400 bg-clip-text text-transparent mb-4 drop-shadow-lg">
+            Welcome to Codenames Online!
+          </h1>
+          <p className="text-l text-slate-300 max-w-2xl mx-auto">
+            Play Codenames with your friends online! Create a game or join an existing one to start your spy mission.
+          </p>
+        </div>
         
-        {/* MAIN GAME SECTION - Priority #1 */}
+        {/* GAME LOBBY - Unified Section */}
         <div className="mb-8">
-          {/* Create/Join Game Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {/* Create Game */}
-            <div className="bg-white p-8 rounded-lg shadow-lg border border-gray-200">
-              <h2 className="text-2xl font-semibold mb-4 text-gray-900">🎮 Create New Game</h2>
-              <p className="text-gray-600 mb-6">Start a new game and invite friends to join</p>
-              <button 
-                onClick={handleCreateRoom}
-                disabled={isCreating}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-4 px-6 rounded-lg font-semibold text-lg transition-colors shadow-md"
-              >
-                {isCreating ? 'Creating...' : 'Create Game'}
-              </button>
+          <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-2xl shadow-2xl border border-slate-600/50 p-8 backdrop-blur-lg">
+
+            {/* Active Games List - Main Focus */}
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-semibold text-slate-100 flex items-center">
+                  <span className="text-2xl mr-3">🎯</span>
+                  Active Games
+                </h3>
+                <button 
+                  onClick={loadGamesList}
+                  disabled={isLoadingGames}
+                  className="text-blue-400 hover:text-blue-300 font-medium flex items-center space-x-2 transition-colors duration-200"
+                >
+                  <span>{isLoadingGames ? '🔄 Loading...' : '🔄 Refresh'}</span>
+                </button>
+              </div>
+              
+              {/* Games List Container */}
+              <div className="p-6 min-h-[300px]">
+                {games.length > 0 ? (
+                  <div className="space-y-4">
+                    {games.map((game) => (
+                      <div key={game.code} className="flex items-center justify-between p-4 hover:bg-slate-700/20 transition-all duration-200 rounded-lg group">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-6">
+                            <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-3 py-2 rounded-lg font-mono font-bold text-lg shadow-lg">
+                              {game.code}
+                            </div>
+                            <div className="text-slate-300">
+                              <div className="flex items-center space-x-4 mb-1">
+                                <span className="font-semibold text-slate-200">{game.playerCount} player{game.playerCount !== 1 ? 's' : ''}</span>
+                                <span className="text-sm text-slate-400">•</span>
+                                <span className="text-sm">{getTimeAgo(game.lastActivity)}</span>
+                                <span className="text-sm text-slate-400">•</span>
+                                <span className="text-emerald-400 capitalize font-medium">{game.status}</span>
+                              </div>
+                              {game.players.length > 0 && (
+                                <div className="text-sm text-slate-400">
+                                  <span className="font-medium">Players:</span> {game.players.join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleJoinGameFromList(game.code)}
+                          className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-emerald-500/25"
+                        >
+                          Join Game
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 text-slate-400">
+                    <div className="text-5xl mb-4">🎮</div>
+                    <p className="text-lg font-semibold text-slate-300">No active games</p>
+                    <p className="text-slate-400 mt-2">Create the first game to get started!</p>
+                  </div>
+                )}
+              </div>
             </div>
-            
-            {/* Join Game */}
-            <div className="bg-white p-8 rounded-lg shadow-lg border border-gray-200">
-              <h2 className="text-2xl font-semibold mb-4 text-gray-900">🚪 Join with Code</h2>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="roomCode" className="block text-sm font-medium text-gray-700 mb-2">
-                    Game Code
-                  </label>
+
+            {/* Quick Actions - Create & Join */}
+            <div className="border-t border-slate-600/30 pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Join with Code - Left Side */}
+              <div className="p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-xl">
+                <h4 className="text-lg font-semibold text-slate-100 mb-4 flex items-center">
+                  <span className="text-xl mr-2">🚪</span>
+                  Join with Code
+                </h4>
+                <div className="space-y-3">
                   <input
                     type="text"
-                    id="roomCode"
                     value={roomCode}
                     onChange={handleRoomCodeChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 bg-white uppercase text-center text-lg font-mono"
+                    className="w-full px-3 py-2 bg-slate-700/60 border border-slate-500/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 backdrop-blur-sm uppercase text-center font-mono placeholder-slate-400"
                     placeholder="ABCD12"
                     maxLength={6}
                     disabled={isJoining}
                   />
+                  <button 
+                    onClick={handleJoinRoom}
+                    disabled={isJoining || !roomCode.trim()}
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-blue-500/25"
+                  >
+                    {isJoining ? (
+                      <span className="flex items-center justify-center">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                        Joining...
+                      </span>
+                    ) : (
+                      'Join'
+                    )}
+                  </button>
                 </div>
-                <button 
-                  onClick={handleJoinRoom}
-                  disabled={isJoining || !roomCode.trim()}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white py-4 px-6 rounded-lg font-semibold text-lg transition-colors shadow-md"
-                >
-                  {isJoining ? 'Joining...' : 'Join Game'}
-                </button>
               </div>
-            </div>
-          </div>
 
-          {/* Browse Games Section - Priority #2 */}
-          <div className="bg-white p-8 rounded-lg shadow-lg border border-gray-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold text-gray-900">🎯 Browse Active Games</h2>
-              <button 
-                onClick={loadGamesList}
-                disabled={isLoadingGames}
-                className="text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1"
-              >
-                <span>{isLoadingGames ? '🔄 Loading...' : '🔄 Refresh'}</span>
-              </button>
-            </div>
-            
-            {games.length > 0 ? (
-              <div className="space-y-4">
-                {games.map((game) => (
-                  <div key={game.code} className="flex items-center justify-between p-6 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-6">
-                        <div className="bg-blue-100 text-blue-800 px-4 py-2 rounded-lg font-mono font-bold text-xl">
-                          {game.code}
-                        </div>
-                        <div className="text-gray-600">
-                          <div className="flex items-center space-x-4 mb-1">
-                            <span className="font-semibold text-lg">{game.playerCount} player{game.playerCount !== 1 ? 's' : ''}</span>
-                            <span className="text-sm">•</span>
-                            <span className="text-sm">{getTimeAgo(game.lastActivity)}</span>
-                            <span className="text-sm">•</span>
-                            <span className="text-green-600 capitalize font-medium">{game.status}</span>
-                          </div>
-                          {game.players.length > 0 && (
-                            <div className="text-sm text-gray-500">
-                              <span className="font-medium">Players:</span> {game.players.join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleJoinGameFromList(game.code)}
-                      className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors shadow-md"
-                    >
-                      Join Game
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-16 text-gray-500">
-                <div className="text-6xl mb-6">🎮</div>
-                <p className="text-xl font-semibold">No active games</p>
-                <p className="text-lg mt-2">Be the first to create a game!</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ERROR DISPLAY - Only show if there's an error */}
-        {error && (
-          <div className="mb-8 bg-red-50 border border-red-200 p-4 rounded-lg">
-            <h4 className="font-semibold text-red-900 mb-2">⚠️ Error:</h4>
-            <p className="text-red-800 text-sm">{error}</p>
-          </div>
-        )}
-
-        {/* SECONDARY CONTENT - Chat and Info */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Global Chat */}
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-            <h2 className="text-xl font-semibold mb-4 text-gray-900">💬 Global Chat</h2>
-            <ChatRoom />
-            <div className="mt-4 text-sm text-gray-600 bg-blue-50 border border-blue-200 p-3 rounded">
-              <p><strong>Global Chat:</strong> Chat with all online players • Games have their own room chat!</p>
-            </div>
-          </div>
-
-          {/* How to Play */}
-          <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">🎯 How to Play</h3>
-            <div className="text-gray-700 space-y-3">
-              <div className="flex items-start space-x-3">
-                <span className="bg-blue-100 text-blue-800 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">1</span>
-                <p><strong>Create Game:</strong> Click "Create Game" to generate a 6-digit code</p>
-              </div>
-              <div className="flex items-start space-x-3">
-                <span className="bg-green-100 text-green-800 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">2</span>
-                <p><strong>Invite Friends:</strong> Share your game code with friends so they can join</p>
-              </div>
-              <div className="flex items-start space-x-3">
-                <span className="bg-purple-100 text-purple-800 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">3</span>
-                <p><strong>Browse Games:</strong> See all active games and join with one click</p>
-              </div>
-              <div className="flex items-start space-x-3">
-                <span className="bg-orange-100 text-orange-800 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 mt-0.5">4</span>
-                <p><strong>Start Playing:</strong> Once in a room, teams and game mechanics coming soon!</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* DEBUG/ADMIN SECTION - Moved to bottom */}
-        <div className="space-y-6">
-          {/* Connection Status */}
-          <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-3">🔧 Connection Status</h3>
-            <div className="text-gray-700 space-y-2 text-sm">
-              <p>✅ Frontend running • ✅ Multiplayer ready • ✅ Game browsing active</p>
-            </div>
-          </div>
-
-          {/* Debug Tools - Collapsed by default */}
-          <details className="bg-yellow-50 border border-yellow-200 rounded-lg">
-            <summary className="p-4 cursor-pointer font-semibold text-yellow-900">🔧 Debug Tools (Click to expand)</summary>
-            <div className="p-4 pt-0">
-              <div className="flex gap-2 mb-3">
-                <button 
-                  onClick={testBackendDirect}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm"
-                >
-                  Test Backend Direct
-                </button>
-                <button 
-                  onClick={testApiConnection}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm"
-                >
-                  Test Proxy
-                </button>
-                <button 
-                  onClick={loadGamesList}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm"
-                >
-                  Refresh Games
-                </button>
-              </div>
-              {debugInfo && (
-                <div className="bg-yellow-100 p-2 rounded">
-                  <p className="text-yellow-800 font-mono text-sm">{debugInfo}</p>
+              {/* Create New Game - Right Side */}
+              <div className="p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-xl">
+                <h4 className="text-lg font-semibold text-slate-100 mb-4 flex items-center">
+                  <span className="text-xl mr-2">🎮</span>
+                  Create New Game
+                </h4>
+                <div className="text-center">
+                  <button 
+                    onClick={handleCreateRoom}
+                    disabled={isCreating}
+                    className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-emerald-500/25"
+                  >
+                    {isCreating ? (
+                      <span className="flex items-center justify-center">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                        Creating...
+                      </span>
+                    ) : (
+                      'Create'
+                    )}
+                  </button>
                 </div>
-              )}
-              <div className="mt-2 text-xs text-yellow-700">
-                <p><strong>Step 1:</strong> Test Backend Direct (should work if backend is running)</p>
-                <p><strong>Step 2:</strong> Test Proxy (should work after restarting frontend)</p>
+              </div>
               </div>
             </div>
-          </details>
+          </div>
         </div>
       </div>
     </div>
