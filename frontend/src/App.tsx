@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
+import RoomPage from './pages/RoomPage';
 import GamePage from './pages/GamePage';
 import DebugPage from './pages/DebugPage';
 import GameDebugPage from './pages/GameDebugPage';
@@ -103,9 +104,21 @@ function App() {
               }
             />
             
-            {/* Game Route - Direct from homepage */}
+            {/* Room Route - Team assignment and game setup */}
             <Route
-              path="/game/:gameCode"
+              path="/room/:roomId"
+              element={
+                isAuthenticated ? (
+                  <RoomPage />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+            
+            {/* Game Route - Actual gameplay only */}
+            <Route
+              path="/game/:gameId"
               element={
                 isAuthenticated ? (
                   <GamePage />

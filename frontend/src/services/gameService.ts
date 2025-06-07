@@ -9,9 +9,9 @@ class GameService {
   }
 
   startGame(): void {
-    console.log('🚀 [GAMESERVICE] Emitting game:start event to backend');
+    
     socketService.socket?.emit('game:start');
-    console.log('🚀 [GAMESERVICE] game:start event emitted');
+    
   }
 
   resetGame(): void {
@@ -50,12 +50,12 @@ class GameService {
 
   // Event listeners for game events
   onGameStateUpdated(callback: (game: CodenamesGame) => void): void {
-    console.log('🎮 [GAMESERVICE] Registering game:state-updated listener');
+    
     
     const wrappedCallback = (game: CodenamesGame) => {
-      console.log('🎮 [GAMESERVICE] game:state-updated event received:', game);
-      console.log('🎮 [GAMESERVICE] Game status in event:', game.status);
-      console.log('🎮 [GAMESERVICE] Game players count:', game.players?.length);
+      
+      
+      
       callback(game);
     };
     
@@ -99,6 +99,15 @@ class GameService {
 
   // Utility methods
   getTeamStats(game: CodenamesGame) {
+    // Defensive programming - handle missing board data
+    if (!game || !game.board || !Array.isArray(game.board)) {
+      console.warn('⚠️ GameService: Missing or invalid board data, returning default stats');
+      return {
+        red: { total: 0, revealed: 0, remaining: 0 },
+        blue: { total: 0, revealed: 0, remaining: 0 }
+      };
+    }
+    
     const redCards = game.board.filter(c => c.team === 'red');
     const blueCards = game.board.filter(c => c.team === 'blue');
     const redRevealed = redCards.filter(c => c.isRevealed).length;

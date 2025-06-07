@@ -290,7 +290,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             }`}></div>
             <div className="relative z-10">
               <div className="grid grid-cols-5 gap-3">
-                {gameState.board
+                {gameState.board && Array.isArray(gameState.board) ? gameState.board
                   .sort((a, b) => a.position - b.position)
                   .map((card) => (
                     <Card
@@ -300,7 +300,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       onClick={canRevealCard ? onCardClick : undefined}
                       disabled={!canRevealCard}
                     />
-                  ))}
+                  )) : (
+                    <div className="text-center text-white">
+                      <div className="text-xl mb-2">⚠️ Board not loaded</div>
+                      <div className="text-sm opacity-75">Game board data is missing</div>
+                    </div>
+                  )}
               </div>
             </div>
           </div>

@@ -143,66 +143,11 @@ def main():
         # Map the project structure
         structure, file_list = map_directory_structure()
         
-        # Prepare output content
+        # Prepare output content - ONLY detailed file list and after
         output_lines = []
-        output_lines.append("🗂️  CODENAMES PROJECT STRUCTURE MAPPER")
-        output_lines.append("=" * 50)
-        
-        # Tree structure
-        output_lines.append("\n📊 PROJECT TREE:")
-        tree_lines = format_tree(structure)
-        output_lines.extend(tree_lines)
-        
-        # File statistics
-        output_lines.append(f"\n📈 PROJECT STATISTICS:")
-        output_lines.append(f"Total files tracked: {len(file_list)}")
-        
-        # Group by extension
-        extensions = {}
-        for file in file_list:
-            ext = file['extension'] or 'no_extension'
-            extensions[ext] = extensions.get(ext, 0) + 1
-        
-        output_lines.append("\nFile types:")
-        for ext, count in sorted(extensions.items()):
-            output_lines.append(f"  {ext}: {count} files")
-        
-        # Project analysis
-        output_lines.append(f"\n🔍 PROJECT ANALYSIS:")
-        analysis = analyze_project_status(file_list)
-        
-        output_lines.append(f"Backend Status: {analysis['backend_status']}")
-        output_lines.append(f"Frontend Status: {analysis['frontend_status']}")
-        
-        if analysis['phase_indicators']:
-            output_lines.append(f"Detected Phases: {', '.join(analysis['phase_indicators'])}")
-        
-        if analysis['missing_critical']:
-            output_lines.append(f"⚠️  Missing Critical Files:")
-            for missing in analysis['missing_critical']:
-                output_lines.append(f"  - {missing}")
-        
-        if analysis['config_files']:
-            output_lines.append(f"\n📋 Configuration Files Found:")
-            for config in analysis['config_files']:
-                output_lines.append(f"  - {config}")
-        
-        # Key directories summary
-        output_lines.append(f"\n📁 KEY DIRECTORIES:")
-        key_dirs = set()
-        for file in file_list:
-            parts = Path(file['path']).parts
-            if len(parts) > 0:
-                key_dirs.add(parts[0])
-            if len(parts) > 1:
-                key_dirs.add(f"{parts[0]}/{parts[1]}")
-        
-        for dir_path in sorted(key_dirs):
-            dir_files = [f for f in file_list if f['path'].startswith(dir_path)]
-            output_lines.append(f"  {dir_path}: {len(dir_files)} files")
         
         # Detailed file list
-        output_lines.append(f"\n📋 DETAILED FILE LIST:")
+        output_lines.append(f"📋 DETAILED FILE LIST:")
         for file in sorted(file_list, key=lambda x: x['path']):
             size_kb = file['size'] / 1024 if file['size'] > 0 else 0
             output_lines.append(f"  {file['path']} ({size_kb:.1f}KB)")
@@ -215,6 +160,7 @@ def main():
             f.write('\n'.join(output_lines))
         
         # Display summary to console
+        analysis = analyze_project_status(file_list)
         print(f"\n📊 PROJECT SUMMARY:")
         print(f"Total files tracked: {len(file_list)}")
         print(f"Backend Status: {analysis['backend_status']}")

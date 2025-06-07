@@ -59,23 +59,23 @@ router.get('/:gameCode', (req: Request, res: Response): void => {
     
     if (game) {
       const gameState = game.getGame();
-      res.json({ 
+      
+      
+      
+      
+      
+      // Return full game state for GameBoard component
+      const responseData = { 
         success: true, 
         game: {
-          code: gameCode.toUpperCase(),
-          id: gameState.id,
-          status: gameState.status,
-          playerCount: gameState.players.length,
-          players: gameState.players.map(p => ({
-            id: p.id,
-            username: p.username,
-            team: p.team,
-            role: p.role,
-            isOnline: p.isOnline
-          }))
+          ...gameState,  // Include ALL game state data
+          code: gameCode.toUpperCase(),  // Ensure code is uppercase
         },
         timestamp: new Date().toISOString()
-      });
+      };
+      
+      
+      res.json(responseData);
     } else {
       res.status(404).json({ 
         success: false,

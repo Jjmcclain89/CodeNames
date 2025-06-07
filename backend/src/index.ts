@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { gameService } from './services/gameService';
 import gameRoutes from './routes/games';
+import roomRoutes from './routes/rooms';
 
 // Load environment variables
 dotenv.config();
@@ -74,6 +75,7 @@ app.get('/api/health', (req: Request, res: Response): void => {
 
 // Games routes
 app.use('/api/games', gameRoutes);
+app.use('/api/rooms', roomRoutes);
 
 // Auth routes
 app.post('/api/auth/login', (req: Request, res: Response): void => {
@@ -185,10 +187,18 @@ app.post('/api/auth/verify', (req: Request, res: Response): void => {
 console.log('🔗 API routes configured');
 
 // ========================================
-// GAME SOCKET HANDLERS - PHASE 2
+// SOCKET HANDLERS ORGANIZATION
 // ========================================
 
 import { GameService } from './services/gameService';
+
+// ROOM PHASE: Team assignment and game setup
+// - room:join-team (team assignment)
+// - room:start-game (transition to game)
+// - join-game-room (join room and game state)
+
+// GAME PHASE: Actual Codenames gameplay  
+// - game:give-clue, game:reveal-card, game:end-turn, etc.
 
 // Add game socket handlers to existing socket connection
 function addGameHandlers(socket: any, io: any) {
@@ -198,6 +208,10 @@ function addGameHandlers(socket: any, io: any) {
   }
 
   // Game creation and management
+  // ========================================
+  // GAME PHASE HANDLERS  
+  // ========================================
+  
   socket.on('game:create', () => {
     try {
       // Get user's current room instead of hardcoded GLOBAL
@@ -218,12 +232,9 @@ function addGameHandlers(socket: any, io: any) {
       }
       
       // Add player to game
-      console.log('🎮 Adding player to game:');
-      console.log('🎮 Game ID:', game.getId());
-      console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
+
       const success = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
-      console.log('🎮 Add player result:', success);
-      
+
       if (success) {
         const gameState = game.getGame();
         socket.emit('game:state-updated', gameState);
@@ -287,79 +298,6 @@ function addGameHandlers(socket: any, io: any) {
       console.error('❌ [GAME START] Exception during game start:', error);
       console.error('❌ [GAME START] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
       socket.emit('game:error', 'Failed to start game: ' + (error instanceof Error ? error.message : String(error)));
-    }
-  });
-
-  socket.on('game:join-team', (team: string, role: string) => {
-    try {
-      console.log(`\n🏆 [TEAM ASSIGNMENT] ${user.username} wants to join ${team} team as ${role}`);
-      
-      // Get or create game for current room
-      const currentRoom = userRooms.get(socket.id);
-      console.log(`🏆 [ROOM CHECK] ${user.username} is in room:`, currentRoom);
-      
-      if (!currentRoom) {
-        console.log(`❌ [ROOM ERROR] ${user.username} not in a game room`);
-        socket.emit('game:error', 'Not in a game room');
-        return;
-      }
-      
-      const roomCode = currentRoom;
-      let game = gameService.getGameForRoom(roomCode);
-      console.log(`🏆 [GAME LOOKUP] Game exists for room ${roomCode}:`, !!game);
-      
-      if (!game) {
-        console.log(`🏆 [GAME CREATE] Creating new game for ${roomCode} during team assignment`);
-        game = gameService.createGameForRoom(roomCode);
-        gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
-      }
-
-      // Log detailed game state before assignment
-      const preState = game.getGame();
-      console.log(`🏆 [PRE-ASSIGNMENT] Game ${game.getId()} state:`);
-      console.log(`🏆 [PRE-ASSIGNMENT] Total players: ${preState.players.length}`);
-      preState.players.forEach((p, i) => {
-        console.log(`  ${i+1}. ${p.username} (${p.id}) - ${p.team}/${p.role} - Online: ${p.isOnline}`);
-      });
-      
-      // Check if player exists in game before assignment
-      const existingGame = gameService.getGameByPlayer(user.id);
-      console.log(`🏆 [PLAYER CHECK] ${user.username} exists in a game:`, !!existingGame);
-      
-      if (!existingGame) {
-        console.log(`❌ [PLAYER ERROR] ${user.username} not found in any game - this should not happen!`);
-        // Try to add them
-        const addResult = gameService.addPlayerToGame(game.getId(), user.id, user.username, socket.id);
-        console.log(`🏆 [PLAYER FIX] Attempted to add ${user.username} to game:`, addResult);
-      }
-      
-      // Attempt team assignment
-      console.log(`🏆 [ASSIGNMENT] Calling assignPlayerToTeam for ${user.username}`);
-      const result = gameService.assignPlayerToTeam(user.id, team as any, role as any);
-      console.log(`🏆 [ASSIGNMENT] Result:`, result);
-      
-      if (result.success) {
-        const gameState = game.getGame();
-        console.log(`🏆 [SUCCESS] ${user.username} successfully joined ${team} team as ${role}`);
-        console.log(`🏆 [SUCCESS] Broadcasting updated game state to room ${roomCode}`);
-        
-        // Log final state
-        console.log(`🏆 [FINAL STATE] Game now has ${gameState.players.length} players:`);
-        gameState.players.forEach((p, i) => {
-          console.log(`  ${i+1}. ${p.username} - ${p.team}/${p.role}`);
-        });
-        
-        io.to(roomCode).emit('game:state-updated', gameState);
-        console.log(`👥 [BROADCAST COMPLETE] All players in ${roomCode} notified of ${user.username} joining ${team} team`);
-      } else {
-        console.log(`❌ [ASSIGNMENT FAILED] ${user.username} could not join ${team} team as ${role}: ${result.error}`);
-        socket.emit('game:error', result.error || 'Failed to join team');
-      }
-      
-      console.log(`🏆 [TEAM ASSIGNMENT] Completed for ${user.username}\n`);
-    } catch (error) {
-      console.error(`❌ [TEAM ASSIGNMENT ERROR] Error for ${user.username}:`, error);
-      socket.emit('game:error', 'Failed to join team');
     }
   });
 
@@ -453,6 +391,156 @@ function addGameHandlers(socket: any, io: any) {
       socket.emit('game:error', 'Failed to reset game');
     }
   });
+// Room socket handlers
+
+socket.on('room:join-team', (data: { roomId: string; team: string; role: string }) => {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    socket.emit('error', { message: 'Not authenticated' });
+    return;
+  }
+  
+  console.log(`👥 ${user.username} joining ${data.team} team as ${data.role} in room ${data.roomId}`);
+  
+  try {
+    // Import rooms from routes/rooms.ts
+    const { rooms } = require('./routes/rooms');
+    
+    // Get the room
+    const room = rooms.get(data.roomId.toUpperCase());
+    if (!room) {
+      socket.emit('error', { message: 'Room not found' });
+      return;
+    }
+    
+    // Find and update the player in the room
+    const playerIndex = room.players.findIndex((p: any) => p.id === user.id);
+    if (playerIndex !== -1) {
+      // Update existing player
+      room.players[playerIndex].team = data.team;
+      room.players[playerIndex].role = data.role;
+    } else {
+      // Add new player to room
+      room.players.push({
+        id: user.id,
+        username: user.username,
+        team: data.team,
+        role: data.role,
+        isOnline: true,
+        isOwner: room.players.length === 0
+      });
+    }
+    
+    // Update room timestamp
+    room.updatedAt = new Date().toISOString();
+
+    // Send updated room state to the requesting user first
+    socket.emit('room-updated', room);
+    
+    // Then broadcast to all other players in the room
+    socket.to(data.roomId.toUpperCase()).emit('room-updated', room);
+    
+  } catch (error) {
+    console.error('❌ Error updating room team assignment:', error);
+    socket.emit('error', { message: 'Failed to join team' });
+  }
+});
+
+socket.on('room:start-game', (data: { roomId: string }) => {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    socket.emit('error', { message: 'Not authenticated' });
+    return;
+  }
+  
+  console.log(`🚀 ${user.username} starting game from room ${data.roomId}`);
+  
+  try {
+    // Import rooms from routes/rooms.ts
+    const { rooms } = require('./routes/rooms');
+    
+    // Get the room
+    const room = rooms.get(data.roomId.toUpperCase());
+    if (!room) {
+      socket.emit('error', { message: 'Room not found' });
+      return;
+    }
+    
+    // Validate teams before starting
+    const redPlayers = room.players.filter((p: any) => p.team === 'red');
+    const bluePlayers = room.players.filter((p: any) => p.team === 'blue');
+    
+    if (redPlayers.length === 0 || bluePlayers.length === 0) {
+      socket.emit('error', { message: 'Need players on both teams to start' });
+      return;
+    }
+    
+    // Create game using existing room code as game code
+    const gameCode = data.roomId.toUpperCase();
+    const game = gameService.createGameWithCode(gameCode, user.id);
+    
+    // Add all room players to the game
+    room.players.forEach((player: any) => {
+      if (player.team !== 'neutral') {
+        gameService.addPlayerToGameByCode(gameCode, player.id, player.username, '');
+        // Set their team assignment in the game
+        gameService.assignPlayerToTeam(player.id, player.team as any, player.role as any);
+      }
+    });
+    
+    // Start the game
+    const startResult = gameService.startGame(user.id);
+    if (startResult.success) {
+      // Update room status
+      room.status = 'playing';
+      room.updatedAt = new Date().toISOString();
+      
+      console.log(`✅ Game started successfully for room ${data.roomId}`);
+      
+      // Navigate all room members to the game
+      io.to(data.roomId.toUpperCase()).emit('game-created', {
+        gameId: gameCode,
+        message: 'Game started! Redirecting to game board...'
+      });
+    } else {
+      socket.emit('error', { message: startResult.error || 'Failed to start game' });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error starting game from room:', error);
+    socket.emit('error', { message: 'Failed to start game' });
+  }
+});
+
+// Simple room joining for RoomPage
+socket.on('join-room', (roomCode: string) => {
+  const user = connectedUsers.get(socket.id);
+  if (!user) {
+    socket.emit('error', { message: 'Not authenticated' });
+    return;
+  }
+  
+  console.log(`🏠 User ${user.username} joining room: ${roomCode}`);
+  
+  // Leave any previous rooms (except GLOBAL)
+  const socketRooms = Array.from(socket.rooms) as string[];
+  socketRooms.forEach((room) => {
+    if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+      socket.leave(room);
+    }
+  });
+  
+  // Join the new room
+  socket.join(roomCode.toUpperCase());
+  userRooms.set(socket.id, roomCode.toUpperCase());
+  
+  // Notify others in room
+  socket.to(roomCode.toUpperCase()).emit('player-joined-room', {
+    player: { username: user.username, id: user.id },
+    message: `${user.username} joined the room`
+  });
+
+});
 
   // Add the game state request handler properly
   socket.on('game:request-state', () => {
@@ -489,22 +577,19 @@ const io = new Server(server, {
 
 // Helper functions
 function findUserByToken(token: string) {
-  console.log('🔍 Looking for user with token:', token ? token.substring(0, 30) + '...' : 'null/undefined');
-  
+
   if (!token) {
-    console.log('❌ No token provided');
+    
     return null;
   }
   
   for (const [userId, userData] of users.entries()) {
     if (userData.token === token) {
-      console.log('✅ Found user:', userData.username, userId);
+      
       return userData;
     }
   }
-  
-  console.log('❌ User not found for token');
-  console.log('🔍 Available users:');
+
   logUsers();
   return null;
 }
@@ -542,12 +627,7 @@ io.on('connection', (socket) => {
   
   socket.on('authenticate', (token: string) => {
     authCounter++;
-    console.log('🔐 Socket authentication attempt #' + authCounter + ' for socket:', socket.id);
-    console.log('🔐 Total connected sockets:', io.engine.clientsCount);
-    console.log('🔐 Total connectedUsers in memory:', connectedUsers.size);
-    console.log('🔐 Received token type:', typeof token);
-    console.log('🔐 Token value:', token ? token.substring(0, 30) + '...' : 'null/undefined');
-    
+
     const user = findUserByToken(token);
     
     if (user) {
@@ -622,7 +702,11 @@ io.on('connection', (socket) => {
     console.log(`💬 Message from ${user.username}: ${data.message}`);
   });
 
-  // Room-specific socket handlers with proper game state integration
+  // ========================================
+  // ROOM PHASE HANDLERS
+  // ========================================
+  
+  // Join room and initialize game state (used by RoomPage and GamePage)
   socket.on('join-game-room', (gameCode: string) => {
     const user = connectedUsers.get(socket.id);
     if (!user) {
@@ -636,8 +720,8 @@ io.on('connection', (socket) => {
     userRooms.set(socket.id, gameCode);
     
     // Leave any previous game rooms
-    const socketRooms = Array.from(socket.rooms);
-    socketRooms.forEach(room => {
+    const socketRooms = Array.from(socket.rooms) as string[];
+    socketRooms.forEach((room) => {
       if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
         socket.leave(room);
         console.log(`📤 User ${user.username} left room: ${room}`);
@@ -655,12 +739,9 @@ io.on('connection', (socket) => {
     }
     
     // Add player to game if not already present
-    console.log('🎮 Adding player to game:');
-    console.log('🎮 Game ID:', game.getId());
-    console.log('🎮 User:', user.username, 'ID:', user.id, 'Socket:', socket.id);
+
     const success = gameService.addPlayerToGameByCode(gameCode, user.id, user.username, socket.id);
-    console.log('🎮 Add player result:', success);
-    
+
     if (success) {
       console.log(`✅ Added ${user.username} to game state`);
     } else {
@@ -669,12 +750,11 @@ io.on('connection', (socket) => {
     
     // Always send current game state to the player
     const gameState = game.getGame();
-    console.log('🎮 BEFORE sending game state to:', user.username);
-    console.log('🎮 Game players:', gameState.players.map((p: any) => `${p.username}(${p.team}/${p.role})`));
+
     socket.emit('game:state-updated', gameState);
     
     // Also send to others in the room
-    console.log('🎮 Broadcasting game state to room:', gameCode);
+    
     socket.to(gameCode).emit('game:state-updated', gameState);
     
     // Notify others that player joined
