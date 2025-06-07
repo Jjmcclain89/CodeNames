@@ -273,10 +273,10 @@ function addGameHandlers(socket: any, io: any) {
         const game = gameService.getGameByPlayer(user.id);
         if (game) {
           const gameState = game.getGame();
-          console.log('🚀 [GAME START] Broadcasting game state to room:', gameState.roomCode);
+          console.log('🚀 [GAME START] Broadcasting game state to room:', gameState.gameCode);
           console.log('🚀 [GAME START] Game status:', gameState.status);
           console.log('🚀 [GAME START] Players in game:', gameState.players.length);
-          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.gameCode).emit('game:state-updated', gameState);
           console.log('✅ [GAME START] Game started successfully by:', user.username);
         }
       } else {
@@ -371,9 +371,9 @@ function addGameHandlers(socket: any, io: any) {
         const game = gameService.getGameByPlayer(user.id);
         if (game) {
           const gameState = game.getGame();
-          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.gameCode).emit('game:state-updated', gameState);
           if (gameState.currentClue) {
-            io.to(gameState.roomCode).emit('game:clue-given', gameState.currentClue);
+            io.to(gameState.gameCode).emit('game:clue-given', gameState.currentClue);
           }
           console.log('💡 Clue given by', user.username + ':', data.word, data.number);
         }
@@ -394,11 +394,11 @@ function addGameHandlers(socket: any, io: any) {
         const game = gameService.getGameByPlayer(user.id);
         if (game) {
           const gameState = game.getGame();
-          io.to(gameState.roomCode).emit('game:state-updated', gameState);
-          io.to(gameState.roomCode).emit('game:card-revealed', result.card);
+          io.to(gameState.gameCode).emit('game:state-updated', gameState);
+          io.to(gameState.gameCode).emit('game:card-revealed', result.card);
           
           if (result.gameEnded && result.winner) {
-            io.to(gameState.roomCode).emit('game:game-ended', result.winner);
+            io.to(gameState.gameCode).emit('game:game-ended', result.winner);
             console.log('🎉 Game ended! Winner:', result.winner);
           }
           
@@ -421,8 +421,8 @@ function addGameHandlers(socket: any, io: any) {
         const game = gameService.getGameByPlayer(user.id);
         if (game) {
           const gameState = game.getGame();
-          io.to(gameState.roomCode).emit('game:state-updated', gameState);
-          io.to(gameState.roomCode).emit('game:turn-changed', gameState.currentTurn);
+          io.to(gameState.gameCode).emit('game:state-updated', gameState);
+          io.to(gameState.gameCode).emit('game:turn-changed', gameState.currentTurn);
           console.log('⏭️ Turn ended by', user.username, '- now', gameState.currentTurn, 'turn');
         }
       } else {
@@ -442,7 +442,7 @@ function addGameHandlers(socket: any, io: any) {
         const game = gameService.getGameByPlayer(user.id);
         if (game) {
           const gameState = game.getGame();
-          io.to(gameState.roomCode).emit('game:state-updated', gameState);
+          io.to(gameState.gameCode).emit('game:state-updated', gameState);
           console.log('🔄 Game reset by:', user.username);
         }
       } else {

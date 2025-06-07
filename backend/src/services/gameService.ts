@@ -81,18 +81,16 @@ export class GameService {
   }
 
   // Existing game lifecycle methods
-  createGameForRoom(roomCode: string): CodenamesGameModel {
+  createGameForRoom(gameCode: string): CodenamesGameModel {
     // Check if game already exists - don't delete it!
-    const existingGame = this.getGameForRoom(roomCode);
+    const existingGame = this.getGameForRoom(gameCode);
     if (existingGame) {
-      console.log(`⚠️  Game already exists for room ${roomCode}, returning existing game`);
+      console.log(`⚠️  Game already exists for room ${gameCode}, returning existing game`);
       return existingGame;
     }
 
-
-  // Method to explicitly create a fresh game (for reset/restart scenarios)
-    console.log(`🎮 Creating new game for room: ${roomCode}`);
-    const gameModel = new CodenamesGameModel(roomCode);
+    console.log(`🎮 Creating new game for room: ${gameCode}`);
+    const gameModel = new CodenamesGameModel(gameCode);
     this.games.set(gameModel.getId(), {
       model: gameModel,
       lastActivity: new Date()
@@ -102,11 +100,11 @@ export class GameService {
   }
 
   // Method to explicitly create a fresh game (for reset/restart scenarios)
-  createFreshGameForRoom(roomCode: string): CodenamesGameModel {
-    console.log(`🎮 Creating fresh game for room: ${roomCode} (deleting any existing)`);
-    this.deleteGameForRoom(roomCode);
+  createFreshGameForRoom(gameCode: string): CodenamesGameModel {
+    console.log(`🎮 Creating fresh game for room: ${gameCode} (deleting any existing)`);
+    this.deleteGameForRoom(gameCode);
 
-    const gameModel = new CodenamesGameModel(roomCode);
+    const gameModel = new CodenamesGameModel(gameCode);
     this.games.set(gameModel.getId(), {
       model: gameModel,
       lastActivity: new Date()
@@ -124,9 +122,9 @@ export class GameService {
     return null;
   }
 
-  getGameForRoom(roomCode: string): CodenamesGameModel | null {
+  getGameForRoom(gameCode: string): CodenamesGameModel | null {
     for (const [gameId, gameWithMeta] of this.games.entries()) {
-      if (gameWithMeta.model.getRoomCode() === roomCode) {
+      if (gameWithMeta.model.getGameCode() === gameCode) {
         gameWithMeta.lastActivity = new Date();
         return gameWithMeta.model;
       }
@@ -165,9 +163,9 @@ export class GameService {
     return false;
   }
 
-  deleteGameForRoom(roomCode: string): boolean {
+  deleteGameForRoom(gameCode: string): boolean {
     for (const [gameId, gameWithMeta] of this.games.entries()) {
-      if (gameWithMeta.model.getRoomCode() === roomCode) {
+      if (gameWithMeta.model.getGameCode() === gameCode) {
         return this.deleteGame(gameId);
       }
     }
@@ -369,7 +367,7 @@ export class GameService {
       const gameState = gameWithMeta.model.getGame();
       
       // Use roomCode as the display code (works for both room-based and code-based games)
-      const displayCode = gameState.roomCode || gameId.substring(0, 6).toUpperCase();
+      const displayCode = gameState.gameCode || gameId.substring(0, 6).toUpperCase();
       
       activeGames.push({
         code: displayCode,

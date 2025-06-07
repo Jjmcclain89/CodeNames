@@ -4,7 +4,7 @@ import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, P
 export class CodenamesGameModel {
   private game: CodenamesGame;
 
-  constructor(roomCode: string, config: GameConfig = GAME_CONFIG.STANDARD_SETUP) {
+  constructor(gameCode: string, config: GameConfig = GAME_CONFIG.STANDARD_SETUP) {
     const board = this.generateBoard(config);
     
     // ✅ Count red vs blue cards to determine starting team
@@ -17,7 +17,7 @@ export class CodenamesGameModel {
 
     this.game = {
       id: this.generateGameId(),
-      roomCode,
+      gameCode,
       status: 'waiting',
       currentTurn: startingTeam, // ✅ Team with more words goes first
       players: [],
@@ -41,8 +41,8 @@ export class CodenamesGameModel {
     return this.game.status;
   }
 
-  getRoomCode(): string {
-    return this.game.roomCode;
+  getGameCode(): string {
+    return this.game.gameCode;
   }
 
   // Player management
@@ -263,12 +263,12 @@ export class CodenamesGameModel {
   }
 
   resetGame(): void {
-    const roomCode = this.game.roomCode;
+    const gameCode = this.game.gameCode;
     const players = this.game.players.map(p => ({ ...p, role: 'operative' as PlayerRole }));
 
     this.game = {
       id: this.generateGameId(),
-      roomCode,
+      gameCode,
       status: 'waiting',
       currentTurn: 'red',
       players,
