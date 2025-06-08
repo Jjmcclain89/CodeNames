@@ -36,77 +36,51 @@ const LobbyChat: React.FC<LobbyChatProps> = ({
   onKeyPress
 }) => {
   return (
-    <div className="space-y-6">
-      {/* Players List */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-900 mb-4">
-          👥 Players ({players.length})
-        </h3>
-        <div className="space-y-2">
-          {players.length > 0 ? (
-            players.map((player: any) => (
-              <div key={player.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <div>
-                  <div className="font-medium text-gray-900 flex items-center">
-                    {player.username}
-                    {player.team && player.team !== 'neutral' && (
-                      <span className={`ml-2 text-xs px-2 py-1 rounded ${player.team === 'red' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '👑' : '🕵️'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+    <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl border border-slate-600/50 p-4 backdrop-blur-lg">
+      <h3 className="font-semibold text-slate-100 mb-4 flex items-center">
+        <span className="text-xl mr-2">💬</span>
+        Lobby Chat
+      </h3>
+      
+      <div className="h-80 overflow-y-auto border border-slate-600/50 rounded-lg p-3 mb-4 bg-slate-700/30 backdrop-blur-sm scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+        {messages.length > 0 ? (
+          messages.map((message) => (
+            <div key={message.id} className="mb-3 p-2 rounded-lg bg-slate-600/20 border border-slate-600/20">
+              <div className="text-sm">
+                <span className="font-medium text-blue-300">{message.username}:</span>
+                <span className="text-slate-200 ml-2">{message.text}</span>
               </div>
-            ))
-          ) : (
-            <div className="text-gray-500 text-sm text-center py-4">
-              No players yet
+              <div className="text-xs text-slate-500 mt-1">
+                {new Date(message.timestamp).toLocaleTimeString()}
+              </div>
             </div>
-          )}
-        </div>
+          ))
+        ) : (
+          <div className="text-slate-400 text-center py-12 flex flex-col items-center">
+            <div className="text-3xl mb-2">💬</div>
+            <div className="text-sm">No messages yet</div>
+            <div className="text-xs text-slate-500 mt-1">Start the conversation!</div>
+          </div>
+        )}
       </div>
 
-      {/* Lobby Chat */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-900 mb-4">💬 Lobby Chat</h3>
-        
-        <div className="h-64 overflow-y-auto border border-gray-200 rounded p-2 mb-4 bg-gray-50">
-          {messages.length > 0 ? (
-            messages.map((message) => (
-              <div key={message.id} className="mb-2 text-sm">
-                <span className="font-medium text-blue-600">{message.username}:</span>
-                <span className="text-gray-800 ml-1">{message.text}</span>
-                <div className="text-xs text-gray-500">
-                  {new Date(message.timestamp).toLocaleTimeString()}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-gray-500 text-center py-8">
-              No messages yet. Start the conversation!
-            </div>
-          )}
-        </div>
-
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={onKeyPress}
-            placeholder={isConnected ? "Type a message..." : "Connecting..."}
-            disabled={!isConnected}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
-          <button
-            onClick={onSendMessage}
-            disabled={!newMessage.trim() || !isConnected}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2 rounded text-sm"
-          >
-            Send
-          </button>
-        </div>
+      <div className="flex space-x-2">
+        <input
+          type="text"
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          onKeyPress={onKeyPress}
+          placeholder={isConnected ? "Type a message..." : "Connecting..."}
+          disabled={!isConnected}
+          className="flex-1 px-3 py-2 bg-slate-700/60 border border-slate-500/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 placeholder-slate-400 text-sm backdrop-blur-sm"
+        />
+        <button
+          onClick={onSendMessage}
+          disabled={!newMessage.trim() || !isConnected}
+          className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-600 disabled:to-slate-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-lg"
+        >
+          Send
+        </button>
       </div>
     </div>
   );

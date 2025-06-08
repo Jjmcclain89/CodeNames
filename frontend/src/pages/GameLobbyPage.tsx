@@ -232,41 +232,55 @@ const GameLobbyPage: React.FC = () => {
     }
   };
 
-  // Loading State
+  // Loading State - Dark Theme
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
-          <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Loading Game Lobby...</div>
-          <div className="text-gray-600 mb-6">Lobby: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{lobbyId}</span></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+        </div>
+        
+        <div className="text-center bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 rounded-2xl shadow-2xl border border-slate-600/50 backdrop-blur-lg max-w-md mx-4">
+          <div className="text-2xl font-bold text-slate-100 mb-4">🎮 Loading Game Lobby...</div>
+          <div className="text-slate-300 mb-6">
+            Lobby: <span className="font-mono bg-slate-700/50 px-2 py-1 rounded text-amber-300">{lobbyId}</span>
+          </div>
           <div className="flex justify-center">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <div className="w-12 h-12 border-4 border-slate-600 border-t-blue-500 rounded-full animate-spin"></div>
           </div>
         </div>
       </div>
     );
   }
 
-  // Error State
+  // Error State - Dark Theme
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
-          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Lobby Error</div>
-          <div className="text-gray-600 mb-6">
-            <p>Lobby: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{lobbyId}</span></p>
-            <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+        </div>
+        
+        <div className="text-center bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 rounded-2xl shadow-2xl border border-slate-600/50 backdrop-blur-lg max-w-md mx-4">
+          <div className="text-red-400 text-2xl font-bold mb-4">🚨 Lobby Error</div>
+          <div className="text-slate-300 mb-6">
+            <p>Lobby: <span className="font-mono bg-slate-700/50 px-2 py-1 rounded font-bold text-amber-300">{lobbyId}</span></p>
+            <p className="mt-3 p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-sm text-red-200">{error}</p>
           </div>
           <div className="space-y-3">
             <button 
               onClick={() => navigate('/')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
             >
               🏠 Go Back to Home
             </button>
             <button 
               onClick={() => window.location.reload()}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="w-full bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
             >
               🔄 Try Again
             </button>
@@ -277,26 +291,42 @@ const GameLobbyPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 relative">
+      {/* Background Pattern */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+      </div>
+
+      <div className="relative z-10 max-w-6xl mx-auto p-6">
+        {/* Header Section */}
         <div className="mb-6 flex justify-between items-center">
           <button 
             onClick={() => navigate('/')}
-            className="text-blue-600 hover:text-blue-800 flex items-center"
+            className="text-blue-400 hover:text-blue-300 flex items-center font-medium transition-colors duration-200"
           >
             ← Back to Home
           </button>
           <div className="flex items-center space-x-4 text-sm">
-            <div className="text-gray-600">
-              Status: <span className={`font-semibold ${isConnected ? 'text-green-600' : 'text-yellow-600'}`}>
+            <div className="text-slate-300">
+              Game: <span className={`font-semibold`}>
+                {lobbyId}
+              </span>
+            </div>
+            <div className="text-slate-300">
+              Status: <span className={`font-semibold ${isConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
                 {isConnected ? 'Connected' : 'Connecting...'}
               </span>
             </div>
-            <div className="text-gray-600">
-              Players: <span className="font-semibold text-blue-600">{players.length}</span>
-            </div>
           </div>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg backdrop-blur-sm">
+            <p className="text-red-200">{error}</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Lobby Setup Area */}
@@ -324,15 +354,6 @@ const GameLobbyPage: React.FC = () => {
               onSendMessage={sendMessage}
               onKeyPress={handleKeyPress}
             />
-          </div>
-        </div>
-        
-        {/* Invite Section */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 p-4 rounded-lg">
-          <h3 className="font-semibold text-blue-900 mb-2">📱 Invite Friends</h3>
-          <div className="text-blue-800">
-            <p>Share this lobby code with friends: <span className="bg-blue-100 px-2 py-1 rounded font-mono font-bold">{lobbyId}</span></p>
-            <p className="text-sm mt-1">They can join by entering this code on the homepage!</p>
           </div>
         </div>
       </div>

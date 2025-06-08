@@ -110,7 +110,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={hasSpymaster('red')}
                   >
-                    {hasSpymaster('red') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
+                    {hasSpymaster('red') ? '📻 Spymaster Taken' : '📻 Join as Spymaster'}
                   </button>
                   <button
                     onClick={() => onJoinTeam('red', 'operative')}
@@ -128,7 +128,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       <div key={player.id} className="flex justify-between items-center py-1">
                         <span>{player.username}</span>
                         <span className="text-red-400 font-medium">
-                          {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
+                          {player.role === 'spymaster' ? '📻' : '🕵️'} {player.role}
                         </span>
                       </div>
                     ))
@@ -147,7 +147,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={hasSpymaster('blue')}
                   >
-                    {hasSpymaster('blue') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
+                    {hasSpymaster('blue') ? '📻 Spymaster Taken' : '📻 Join as Spymaster'}
                   </button>
                   <button
                     onClick={() => onJoinTeam('blue', 'operative')}
@@ -165,7 +165,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       <div key={player.id} className="flex justify-between items-center py-1">
                         <span>{player.username}</span>
                         <span className="text-blue-400 font-medium">
-                          {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
+                          {player.role === 'spymaster' ? '📻' : '🕵️'} {player.role}
                         </span>
                       </div>
                     ))
@@ -384,7 +384,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 <div>
                   <div className="font-medium text-slate-100">{player.username}</div>
                   <div className={`text-xs ${player.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                    {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '👑' : '🕵️'}
+                    {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '📻' : '🕵️'}
                   </div>
                 </div>
                 <div className="w-2 h-2 bg-green-500 rounded-full"></div>
