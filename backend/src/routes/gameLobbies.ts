@@ -193,15 +193,21 @@ router.get('/', (req: Request, res: Response): void => {
   try {
     console.log('📋 Listing all game lobbies...');
     
-    const activeGameLobbies = Array.from(gameLobbies.values()).map(lobby => ({
-      code: lobby.code,
-      id: lobby.id,
-      status: lobby.status,
-      playerCount: lobby.players.length,
-      players: lobby.players.map((p: GameLobbyPlayer) => p.username),
-      createdAt: lobby.createdAt,
-      lastActivity: lobby.updatedAt
-    }));
+    const activeGameLobbies = Array.from(gameLobbies.values()).map(lobby => {
+      // Find the owner player to get their username
+      const ownerPlayer = lobby.players.find((p: GameLobbyPlayer) => p.isOwner);
+      
+      return {
+        code: lobby.code,
+        id: lobby.id,
+        status: lobby.status,
+        playerCount: lobby.players.length,
+        players: lobby.players.map((p: GameLobbyPlayer) => p.username),
+        ownerUsername: ownerPlayer?.username || 'Unknown',
+        createdAt: lobby.createdAt,
+        lastActivity: lobby.updatedAt
+      };
+    });
     
     // Sort by most recent activity
     activeGameLobbies.sort((a, b) => 

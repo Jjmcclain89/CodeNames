@@ -49,3 +49,10 @@ a:hover {
   color: #10b981;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
+
+/* Mobile font size reduction - 80% of desktop size */
+@media (max-width: 640px) {
+  html {
+    font-size: 80%;
+  }
+}

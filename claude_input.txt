@@ -1,1247 +1,17 @@
 ================================================================================
 COMBINED FILES FOR CLAUDE IMPORT
-Generated from 6 files
+Generated from 1 files
 ================================================================================
 
 TABLE OF CONTENTS:
- 1. frontend/src/pages/GameLobbyPage.tsx
- 2. frontend/src/components/GameLobby/TeamSetup.tsx
- 3. frontend/src/components/GameLobby/LobbyChat.tsx
- 4. frontend/src/components/GameBoard/GameBoard.tsx
- 5. frontend/src/pages/HomePage.tsx
- 6. frontend/src/components/GamesList/GamesList.tsx
+ 1. frontend/src/components/GamesList/GamesList.tsx
 
 ================================================================================
-
-============================================================
-FILE: frontend/src/pages/GameLobbyPage.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\GameLobbyPage.tsx
-SIZE: 11005 characters
-============================================================
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { socketService } from '../services/socketService';
-import { LobbyChat, TeamSetup } from '../components/GameLobby';
-
-interface Player {
-  id: string;
-  username: string;
-  team?: string;
-  role?: string;
-  isOnline?: boolean;
-}
-
-interface GameLobbyMessage {
-  id: string;
-  username: string;
-  userId: string;
-  text: string;
-  timestamp: string;
-}
-
-const GameLobbyPage: React.FC = () => {
-  const { lobbyId } = useParams<{ lobbyId: string }>();
-  const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [lobbyState, setLobbyState] = useState<any>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [messages, setMessages] = useState<GameLobbyMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isCreating, setIsCreating] = useState(false);
-
-  useEffect(() => {
-    if (!lobbyId) return;
-    
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    setCurrentUser(user);
-    loadLobbyAndConnect();
-    
-    return () => {
-      if (socketService.socket) {
-        socketService.socket.off('player-joined-lobby');
-        socketService.socket.off('player-left-lobby');
-        socketService.socket.off('new-lobby-message');
-        socketService.socket.off('lobby-updated');
-        socketService.socket.off('game-created');
-      }
-    };
-  }, [lobbyId]);
-
-  const loadLobbyAndConnect = async () => {
-    if (!lobbyId) {
-      setError('No lobby ID provided');
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const token = localStorage.getItem('token');
-      
-      if (!user.username || !token) {
-        setError('Please log in first');
-        setIsLoading(false);
-        return;
-      }
-
-      // Load lobby info
-      const lobbyResponse = await fetch(`/api/gamelobbies/${lobbyId.toUpperCase()}`);
-      
-      if (lobbyResponse.ok) {
-        const lobbyData = await lobbyResponse.json();
-        if (lobbyData.success) {
-          setLobbyState(lobbyData.gameLobby);
-          setPlayers(lobbyData.gameLobby.players || []);
-        }
-      } else if (lobbyResponse.status === 404) {
-        setError('Game lobby not found - the lobby code may be invalid or expired');
-        setIsLoading(false);
-        return;
-      }
-
-      // Connect to socket and join lobby
-      await connectToLobby(lobbyId, token, user);
-      setIsLoading(false);
-      
-    } catch (err: any) {
-      console.error('❌ Error loading game lobby:', err);
-      setError(err.message || 'Unable to connect to game lobby');
-      setIsLoading(false);
-    }
-  };
-
-  const connectToLobby = async (lobbyId: string, token: string, user: any) => {
-    if (isConnected && socketService.socket?.connected) {
-      return Promise.resolve();
-    }
-    
-    return new Promise<void>((resolve) => {
-      if (!socketService.socket?.connected) {
-        console.log('❌ No socket connection available');
-        return;
-      }
-
-      const handleAuth = () => {
-        socketService.socket?.emit('join-lobby', lobbyId);
-        setIsConnected(true);
-        setupLobbyListeners();
-        resolve();
-      };
-
-      socketService.onAuthenticated((data: any) => {
-        if (data.success) handleAuth();
-      });
-      
-      socketService.authenticate(token);
-      
-      if (socketService.socket?.connected && !isConnected) {
-        handleAuth();
-      }
-    });
-  };
-
-  const setupLobbyListeners = () => {
-    if (!socketService.socket) return;
-
-    // Player events
-    socketService.socket.on('player-joined-lobby', (data: any) => {
-      console.log('👥 Player joined lobby:', data);
-      setPlayers(prev => [...prev.filter(p => p.id !== data.player.id), data.player]);
-    });
-
-    socketService.socket.on('player-left-lobby', (data: any) => {
-      console.log('👥 Player left lobby:', data);
-      setPlayers(prev => prev.filter(p => p.id !== data.player.id));
-    });
-
-    // Lobby updates
-    socketService.socket.on('lobby-updated', (lobbyData: any) => {
-      console.log('🎮 Lobby updated:', lobbyData);
-      console.log('🎮 Updated lobby players:', lobbyData.players?.length || 0);
-      setLobbyState(lobbyData);
-      setPlayers(lobbyData.players || []);
-      
-      // Log team assignments for debugging
-      if (lobbyData.players) {
-        lobbyData.players.forEach((p: any, i: number) => {
-          console.log(`  ${i+1}. ${p.username} - ${p.team}/${p.role}`);
-        });
-      }
-    });
-
-    // Chat
-    socketService.socket.on('new-lobby-message', (message: GameLobbyMessage) => {
-      setMessages(prev => [...prev, message]);
-    });
-
-    // Game creation
-    socketService.socket.on('game-created', (data: any) => {
-      console.log('🎮 Game created, navigating to:', data.gameId);
-      navigate(`/game/${data.gameId}`);
-    });
-  };
-
-  const handleJoinTeam = (team: string, role: string) => {
-    if (!isConnected) {
-      setError('Not connected to server');
-      return;
-    }
-
-    socketService.socket?.emit('lobby:join-team', {
-      lobbyId: lobbyId?.toUpperCase(),
-      team,
-      role
-    });
-  };
-
-  const handleStartGame = async () => {
-    if (!canStartGame()) {
-      setError('Need players on both teams to start');
-      return;
-    }
-
-    setIsCreating(true);
-    setError('');
-
-    try {
-      if (!isConnected) {
-        setError('Not connected to server');
-        return;
-      }
-
-      // Emit start game event - backend will create game and navigate all players
-      socketService.socket?.emit('lobby:start-game', {
-        lobbyId: lobbyId?.toUpperCase()
-      });
-
-    } catch (err: any) {
-      console.error('❌ Error starting game:', err);
-      setError(err.message || 'Failed to start game');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const canStartGame = () => {
-    if (!players) return false;
-    
-    const redPlayers = players.filter(p => p.team === 'red');
-    const bluePlayers = players.filter(p => p.team === 'blue');
-    
-    return redPlayers.length > 0 && bluePlayers.length > 0;
-  };
-
-  const sendMessage = () => {
-    if (!newMessage.trim() || !isConnected || !lobbyId) return;
-
-    socketService.socket?.emit('send-lobby-message', {
-      lobbyId: lobbyId.toUpperCase(),
-      message: newMessage.trim()
-    });
-
-    setNewMessage('');
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  // Loading State
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
-          <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Loading Game Lobby...</div>
-          <div className="text-gray-600 mb-6">Lobby: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{lobbyId}</span></div>
-          <div className="flex justify-center">
-            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Error State
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
-          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Lobby Error</div>
-          <div className="text-gray-600 mb-6">
-            <p>Lobby: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{lobbyId}</span></p>
-            <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
-          </div>
-          <div className="space-y-3">
-            <button 
-              onClick={() => navigate('/')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-            >
-              🏠 Go Back to Home
-            </button>
-            <button 
-              onClick={() => window.location.reload()}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-            >
-              🔄 Try Again
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="mb-6 flex justify-between items-center">
-          <button 
-            onClick={() => navigate('/')}
-            className="text-blue-600 hover:text-blue-800 flex items-center"
-          >
-            ← Back to Home
-          </button>
-          <div className="flex items-center space-x-4 text-sm">
-            <div className="text-gray-600">
-              Status: <span className={`font-semibold ${isConnected ? 'text-green-600' : 'text-yellow-600'}`}>
-                {isConnected ? 'Connected' : 'Connecting...'}
-              </span>
-            </div>
-            <div className="text-gray-600">
-              Players: <span className="font-semibold text-blue-600">{players.length}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Lobby Setup Area */}
-          <div className="lg:col-span-2 space-y-6">
-            <TeamSetup
-              lobbyId={lobbyId || ''}
-              players={players}
-              currentUser={currentUser}
-              isConnected={isConnected}
-              isCreating={isCreating}
-              onJoinTeam={handleJoinTeam}
-              onStartGame={handleStartGame}
-              canStartGame={canStartGame}
-            />
-          </div>
-
-          {/* Sidebar - Chat and Players */}
-          <div>
-            <LobbyChat
-              players={players}
-              messages={messages}
-              newMessage={newMessage}
-              setNewMessage={setNewMessage}
-              isConnected={isConnected}
-              onSendMessage={sendMessage}
-              onKeyPress={handleKeyPress}
-            />
-          </div>
-        </div>
-        
-        {/* Invite Section */}
-        <div className="mt-6 bg-blue-50 border border-blue-200 p-4 rounded-lg">
-          <h3 className="font-semibold text-blue-900 mb-2">📱 Invite Friends</h3>
-          <div className="text-blue-800">
-            <p>Share this lobby code with friends: <span className="bg-blue-100 px-2 py-1 rounded font-mono font-bold">{lobbyId}</span></p>
-            <p className="text-sm mt-1">They can join by entering this code on the homepage!</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default GameLobbyPage;
-
-
-============================================================
-FILE: frontend/src/components/GameLobby/TeamSetup.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameLobby\TeamSetup.tsx
-SIZE: 6793 characters
-============================================================
-import React from 'react';
-
-interface Player {
-  id: string;
-  username: string;
-  team?: string;
-  role?: string;
-  isOnline?: boolean;
-}
-
-interface TeamSetupProps {
-  lobbyId: string;
-  players: Player[];
-  currentUser: any;
-  isConnected: boolean;
-  isCreating: boolean;
-  onJoinTeam: (team: string, role: string) => void;
-  onStartGame: () => void;
-  canStartGame: () => boolean;
-}
-
-const TeamSetup: React.FC<TeamSetupProps> = ({
-  lobbyId,
-  players,
-  currentUser,
-  isConnected,
-  isCreating,
-  onJoinTeam,
-  onStartGame,
-  canStartGame
-}) => {
-  const getCurrentUserPlayer = () => {
-    return players.find(p => p.username === currentUser?.username || p.id === currentUser?.id);
-  };
-
-  const getTeamPlayers = (team: string) => {
-    return players.filter(p => p.team === team);
-  };
-
-  const hasSpymaster = (team: string) => {
-    return getTeamPlayers(team).some(p => p.role === 'spymaster');
-  };
-
-  const userPlayer = getCurrentUserPlayer();
-
-  return (
-    <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
-      <h1 className="text-3xl font-bold text-gray-900 mb-6">
-        🎮 Game Lobby: {lobbyId}
-      </h1>
-      
-      {/* Team Assignment Section */}
-      <div className="space-y-6">
-        <div className="text-center">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-2">🕵️ Choose Your Team</h2>
-          <p className="text-gray-600">Select your team and role to get ready for the game!</p>
-        </div>
-
-        {/* Current User Status */}
-        {userPlayer && (
-          <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-            <p className="text-center text-blue-900">
-              You are: <span className="font-semibold">{userPlayer.username}</span>
-              {userPlayer.team && userPlayer.team !== 'neutral' && (
-                <span className={`ml-2 font-bold ${userPlayer.team === 'red' ? 'text-red-600' : 'text-blue-600'}`}>
-                  • {userPlayer.team === 'red' ? '🔴' : '🔵'} {userPlayer.team} team 
-                  ({userPlayer.role === 'spymaster' ? '👑 Spymaster' : '🕵️ Operative'})
-                </span>
-              )}
-            </p>
-          </div>
-        )}
-
-        {/* Team Selection Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Red Team */}
-          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
-            <h3 className="text-2xl font-semibold text-red-700 mb-4 text-center">
-              🔴 Red Team
-            </h3>
-            <div className="space-y-3 mb-4">
-              <button
-                onClick={() => onJoinTeam('red', 'spymaster')}
-                className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400"
-                disabled={hasSpymaster('red')}
-              >
-                {hasSpymaster('red') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
-              </button>
-              <button
-                onClick={() => onJoinTeam('red', 'operative')}
-                className="w-full bg-red-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-500 transition-colors"
-              >
-                🕵️ Join as Operative
-              </button>
-            </div>
-            <div className="text-sm text-gray-700">
-              <div className="font-medium mb-2">Team Members:</div>
-              {getTeamPlayers('red').length === 0 ? (
-                <p className="text-gray-500 italic">No players yet</p>
-              ) : (
-                getTeamPlayers('red').map((player: any) => (
-                  <div key={player.id} className="flex justify-between items-center py-1">
-                    <span>{player.username}</span>
-                    <span className="text-red-600 font-medium">
-                      {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Blue Team */}
-          <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-6">
-            <h3 className="text-2xl font-semibold text-blue-700 mb-4 text-center">
-              🔵 Blue Team
-            </h3>
-            <div className="space-y-3 mb-4">
-              <button
-                onClick={() => onJoinTeam('blue', 'spymaster')}
-                className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400"
-                disabled={hasSpymaster('blue')}
-              >
-                {hasSpymaster('blue') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
-              </button>
-              <button
-                onClick={() => onJoinTeam('blue', 'operative')}
-                className="w-full bg-blue-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-500 transition-colors"
-              >
-                🕵️ Join as Operative
-              </button>
-            </div>
-            <div className="text-sm text-gray-700">
-              <div className="font-medium mb-2">Team Members:</div>
-              {getTeamPlayers('blue').length === 0 ? (
-                <p className="text-gray-500 italic">No players yet</p>
-              ) : (
-                getTeamPlayers('blue').map((player: any) => (
-                  <div key={player.id} className="flex justify-between items-center py-1">
-                    <span>{player.username}</span>
-                    <span className="text-blue-600 font-medium">
-                      {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Start Game Button */}
-        <div className="text-center">
-          <button
-            onClick={onStartGame}
-            disabled={!canStartGame() || isCreating}
-            className="bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors"
-          >
-            {isCreating ? (
-              <span className="flex items-center justify-center">
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                Creating Game...
-              </span>
-            ) : canStartGame() ? (
-              '🚀 Start Codenames Game'
-            ) : (
-              '⏳ Waiting for Teams'
-            )}
-          </button>
-          {!canStartGame() && !isCreating && (
-            <p className="text-sm text-gray-600 mt-2">
-              Need players on both teams to start
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default TeamSetup;
-
-
-============================================================
-FILE: frontend/src/components/GameLobby/LobbyChat.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameLobby\LobbyChat.tsx
-SIZE: 3761 characters
-============================================================
-import React from 'react';
-
-interface Player {
-  id: string;
-  username: string;
-  team?: string;
-  role?: string;
-  isOnline?: boolean;
-}
-
-interface GameLobbyMessage {
-  id: string;
-  username: string;
-  userId: string;
-  text: string;
-  timestamp: string;
-}
-
-interface LobbyChatProps {
-  players: Player[];
-  messages: GameLobbyMessage[];
-  newMessage: string;
-  setNewMessage: (message: string) => void;
-  isConnected: boolean;
-  onSendMessage: () => void;
-  onKeyPress: (e: React.KeyboardEvent) => void;
-}
-
-const LobbyChat: React.FC<LobbyChatProps> = ({
-  players,
-  messages,
-  newMessage,
-  setNewMessage,
-  isConnected,
-  onSendMessage,
-  onKeyPress
-}) => {
-  return (
-    <div className="space-y-6">
-      {/* Players List */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-900 mb-4">
-          👥 Players ({players.length})
-        </h3>
-        <div className="space-y-2">
-          {players.length > 0 ? (
-            players.map((player: any) => (
-              <div key={player.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <div>
-                  <div className="font-medium text-gray-900 flex items-center">
-                    {player.username}
-                    {player.team && player.team !== 'neutral' && (
-                      <span className={`ml-2 text-xs px-2 py-1 rounded ${player.team === 'red' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-                        {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '👑' : '🕵️'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              </div>
-            ))
-          ) : (
-            <div className="text-gray-500 text-sm text-center py-4">
-              No players yet
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Lobby Chat */}
-      <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-900 mb-4">💬 Lobby Chat</h3>
-        
-        <div className="h-64 overflow-y-auto border border-gray-200 rounded p-2 mb-4 bg-gray-50">
-          {messages.length > 0 ? (
-            messages.map((message) => (
-              <div key={message.id} className="mb-2 text-sm">
-                <span className="font-medium text-blue-600">{message.username}:</span>
-                <span className="text-gray-800 ml-1">{message.text}</span>
-                <div className="text-xs text-gray-500">
-                  {new Date(message.timestamp).toLocaleTimeString()}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-gray-500 text-center py-8">
-              No messages yet. Start the conversation!
-            </div>
-          )}
-        </div>
-
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={onKeyPress}
-            placeholder={isConnected ? "Type a message..." : "Connecting..."}
-            disabled={!isConnected}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
-          <button
-            onClick={onSendMessage}
-            disabled={!newMessage.trim() || !isConnected}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-4 py-2 rounded text-sm"
-          >
-            Send
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default LobbyChat;
-
-
-============================================================
-FILE: frontend/src/components/GameBoard/GameBoard.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameBoard\GameBoard.tsx
-SIZE: 26024 characters
-============================================================
-import React, { useState, useEffect } from 'react';
-import { CodenamesGame, GamePlayer, TeamColor, PlayerRole } from '../../types/game';
-import Card from './Card';
-import { gameService } from '../../services/gameService';
-
-interface GameBoardProps {
-  gameState: CodenamesGame;
-  currentPlayer: GamePlayer | null;
-  onCardClick: (cardId: string) => void;
-  onGiveClue: (word: string, number: number) => void;
-  onEndTurn: () => void;
-  onStartGame: () => void;
-  onJoinTeam: (team: TeamColor, role: PlayerRole) => void;
-}
-
-export const GameBoard: React.FC<GameBoardProps> = ({
-  gameState,
-  currentPlayer,
-  onCardClick,
-  onGiveClue,
-  onEndTurn,
-  onStartGame,
-  onJoinTeam
-}) => {
-  const [clueWord, setClueWord] = useState('');
-  const [clueNumber, setClueNumber] = useState(1);
-  const [chatVisible, setChatVisible] = useState(false);
-  const [playersVisible, setPlayersVisible] = useState(false);
-  const [infoVisible, setInfoVisible] = useState(false);
-  const [settingsVisible, setSettingsVisible] = useState(false);
-
-  // Reset clue input when turn changes or clue is given
-  useEffect(() => {
-    if (gameState.currentClue) {
-      setClueWord('');
-      setClueNumber(1);
-    }
-  }, [gameState.currentClue]);
-
-  const stats = gameService.getTeamStats(gameState);
-  const isSpymaster = currentPlayer?.role === 'spymaster';
-  const isMyTurn = gameService.isPlayerTurn(gameState, currentPlayer);
-  const canGiveClue = gameService.canPlayerGiveClue(gameState, currentPlayer);
-  const canRevealCard = gameService.canPlayerRevealCard(gameState, currentPlayer);
-
-  const handleGiveClue = () => {
-    if (clueWord.trim() && clueNumber >= 1 && clueNumber <= 9) {
-      onGiveClue(clueWord.trim(), clueNumber);
-    }
-  };
-
-  const getPlayersByTeam = (team: TeamColor) => {
-    return gameState.players.filter(p => p.team === team);
-  };
-
-  const hasSpymaster = (team: TeamColor) => {
-    return gameState.players.some(p => p.team === team && p.role === 'spymaster');
-  };
-
-  // Get board glow effect based on current turn - ENHANCED for visibility
-  const getBoardGlowEffect = () => {
-    if (gameState.currentTurn === 'red') {
-      return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
-    } else {
-      return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
-    }
-  };
-
-  if (gameState.status === 'waiting') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-4 relative">
-        {/* Background Pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
-          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
-        </div>
-        
-        <div className="flex flex-col items-center justify-center min-h-screen">
-          <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-2xl border border-slate-600/50 p-8 max-w-4xl w-full backdrop-blur-lg relative z-10">
-            {/* Banner removed for cleaner look */}
-            
-            {/* Current Player Status */}
-            {currentPlayer && (
-              <div className="text-center mb-6 p-4 bg-slate-700/50 rounded-lg border border-slate-600/50">
-                <p className="text-lg text-slate-200">
-                  Welcome, <span className="font-semibold text-amber-200">{currentPlayer.username}</span>!
-                </p>
-                {currentPlayer.team !== 'neutral' && (
-                  <p className="text-sm text-slate-300">
-                    You are on the{' '}
-                    <span className={`font-semibold ${currentPlayer.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                      {currentPlayer.team}
-                    </span>{' '}
-                    team as a <span className="font-semibold">{currentPlayer.role}</span>
-                  </p>
-                )}
-              </div>
-            )}
-            
-            {/* Team Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              {/* Red Team */}
-              <div className="bg-gradient-to-br from-red-900/60 to-red-800/40 border-2 border-red-500/50 rounded-lg p-6 backdrop-blur-sm">
-                <h3 className="text-2xl font-semibold text-red-200 mb-4 text-center">
-                  🔴 Red Team
-                </h3>
-                <div className="space-y-3 mb-4">
-                  <button
-                    onClick={() => onJoinTeam('red', 'spymaster')}
-                    className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    disabled={hasSpymaster('red')}
-                  >
-                    {hasSpymaster('red') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
-                  </button>
-                  <button
-                    onClick={() => onJoinTeam('red', 'operative')}
-                    className="w-full bg-red-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-500 transition-colors"
-                  >
-                    🕵️ Join as Operative
-                  </button>
-                </div>
-                <div className="text-sm text-slate-300">
-                  <div className="font-medium mb-2">Team Members:</div>
-                  {getPlayersByTeam('red').length === 0 ? (
-                    <p className="text-slate-400 italic">No players yet</p>
-                  ) : (
-                    getPlayersByTeam('red').map(player => (
-                      <div key={player.id} className="flex justify-between items-center py-1">
-                        <span>{player.username}</span>
-                        <span className="text-red-400 font-medium">
-                          {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Blue Team */}
-              <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/40 border-2 border-blue-500/50 rounded-lg p-6 backdrop-blur-sm">
-                <h3 className="text-2xl font-semibold text-blue-200 mb-4 text-center">
-                  🔵 Blue Team
-                </h3>
-                <div className="space-y-3 mb-4">
-                  <button
-                    onClick={() => onJoinTeam('blue', 'spymaster')}
-                    className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    disabled={hasSpymaster('blue')}
-                  >
-                    {hasSpymaster('blue') ? '👑 Spymaster Taken' : '👑 Join as Spymaster'}
-                  </button>
-                  <button
-                    onClick={() => onJoinTeam('blue', 'operative')}
-                    className="w-full bg-blue-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-500 transition-colors"
-                  >
-                    🕵️ Join as Operative
-                  </button>
-                </div>
-                <div className="text-sm text-slate-300">
-                  <div className="font-medium mb-2">Team Members:</div>
-                  {getPlayersByTeam('blue').length === 0 ? (
-                    <p className="text-slate-400 italic">No players yet</p>
-                  ) : (
-                    getPlayersByTeam('blue').map(player => (
-                      <div key={player.id} className="flex justify-between items-center py-1">
-                        <span>{player.username}</span>
-                        <span className="text-blue-400 font-medium">
-                          {player.role === 'spymaster' ? '👑' : '🕵️'} {player.role}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Start Game Button */}
-            <div className="text-center">
-              <button
-                onClick={onStartGame}
-                className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed shadow-lg"
-                disabled={gameState.players.length === 0}
-              >
-                🚀 Start Game
-              </button>
-              <p className="text-sm text-slate-400 mt-3">
-                Need players on both teams to start
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden relative">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
-      </div>
-
-      {/* Centered Layout Container */}
-      <div className="min-h-screen flex justify-center p-4">
-        <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
-          
-          {/* Icons positioned above the game board */}
-          <div className="flex mb-2">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setChatVisible(!chatVisible)}
-                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
-                  chatVisible 
-                    ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white border-emerald-400/50' 
-                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
-                }`}
-                title="Chat"
-              >
-                💬
-              </button>
-              <button
-                onClick={() => setPlayersVisible(!playersVisible)}
-                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
-                  playersVisible 
-                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-400/50' 
-                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
-                }`}
-                title="Players"
-              >
-                👥
-              </button>
-              <button
-                onClick={() => setInfoVisible(!infoVisible)}
-                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
-                  infoVisible 
-                    ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white border-amber-400/50' 
-                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
-                }`}
-                title="Info"
-              >
-                ℹ️
-              </button>
-              <button
-                onClick={() => setSettingsVisible(!settingsVisible)}
-                className="w-10 h-10 bg-gradient-to-br from-slate-700/80 to-slate-800/80 rounded-lg shadow-lg border border-slate-600/50 flex items-center justify-center hover:from-slate-600/80 hover:to-slate-700/80 transition-all duration-200 backdrop-blur-sm relative"
-                title="Settings"
-              >
-                <span className="text-slate-200 text-sm">⚙️</span>
-                
-                {/* Settings Dropdown */}
-                {settingsVisible && (
-                  <div className="absolute top-12 right-0 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-lg shadow-2xl border border-slate-600/50 p-3 min-w-32 backdrop-blur-lg z-60">
-                    <button
-                      onClick={() => window.location.href = '/'}
-                      className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left"
-                    >
-                      🏠 Logout
-                    </button>
-                  </div>
-                )}
-              </button>
-            </div>
-          </div>
-          
-          {/* Current Clue Display */}
-          {gameState.currentClue && (
-            <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
-              <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                💡 {gameState.currentClue.word} ({gameState.currentClue.number})
-              </span>
-              {gameState.guessesRemaining > 0 && (
-                <span className="ml-3 text-sm text-violet-300">
-                  {gameState.guessesRemaining} left
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
-          <div className={`relative bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
-            {/* Board Game Texture with Turn Indicator */}
-            <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
-            <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
-            {/* Turn Indicator Overlay */}
-            <div className={`absolute inset-0 rounded-2xl pointer-events-none transition-all duration-700 ${
-              gameState.currentTurn === 'red' 
-                ? 'bg-gradient-to-br from-red-500/10 via-transparent to-red-500/5' 
-                : 'bg-gradient-to-br from-blue-500/10 via-transparent to-blue-500/5'
-            }`}></div>
-            <div className="relative z-10">
-              <div className="grid grid-cols-5 gap-3">
-                {gameState.board && Array.isArray(gameState.board) ? gameState.board
-                  .sort((a, b) => a.position - b.position)
-                  .map((card) => (
-                    <Card
-                      key={card.id}
-                      card={card}
-                      isSpymaster={isSpymaster}
-                      onClick={canRevealCard ? onCardClick : undefined}
-                      disabled={!canRevealCard}
-                    />
-                  )) : (
-                    <div className="text-center text-white">
-                      <div className="text-xl mb-2">⚠️ Board not loaded</div>
-                      <div className="text-sm opacity-75">Game board data is missing</div>
-                    </div>
-                  )}
-              </div>
-            </div>
-          </div>
-
-          {/* Controls Below Board */}
-          {canGiveClue && (
-            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 w-full max-w-2xl backdrop-blur-lg border border-slate-600/50">
-              <div className="flex items-end space-x-3">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    value={clueWord}
-                    onChange={(e) => setClueWord(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 placeholder-slate-400"
-                    placeholder="Clue word..."
-                    required
-                  />
-                </div>
-                <input
-                  type="number"
-                  min="1"
-                  max="9"
-                  value={clueNumber}
-                  onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
-                  className="w-16 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-center"
-                />
-                <button
-                  onClick={handleGiveClue}
-                  className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-2 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold shadow-lg"
-                >
-                  Give Clue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {canRevealCard && (
-            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
-              <p className="text-slate-200 mb-3">
-                🎯 Click a card to guess ({gameState.guessesRemaining} left)
-              </p>
-              <button
-                onClick={onEndTurn}
-                className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-colors font-semibold shadow-lg"
-              >
-                ⏭️ End Turn
-              </button>
-            </div>
-          )}
-
-          {!isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
-            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-4 text-center max-w-md backdrop-blur-lg border border-slate-600/50">
-              <p className="text-slate-300">
-                ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} team...
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Side Panels */}
-      {playersVisible && (
-        <div className="fixed right-4 top-20 bottom-4 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 flex flex-col backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-100">👥 Players ({gameState.players.length})</h3>
-            <button 
-              onClick={() => setPlayersVisible(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="space-y-2 overflow-y-auto">
-            {gameState.players.map((player) => (
-              <div key={player.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg">
-                <div>
-                  <div className="font-medium text-slate-100">{player.username}</div>
-                  <div className={`text-xs ${player.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                    {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '👑' : '🕵️'}
-                  </div>
-                </div>
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {chatVisible && (
-        <div className="fixed right-4 top-20 bottom-4 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 flex flex-col backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-100">💬 Chat</h3>
-            <button 
-              onClick={() => setChatVisible(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto border border-slate-600 rounded-lg p-3 mb-4 bg-slate-700/30">
-            <div className="space-y-2 text-sm">
-              <div className="text-slate-400 text-center py-4">
-                Chat functionality can be integrated here
-              </div>
-            </div>
-          </div>
-
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Type a message..."
-              className="flex-1 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 placeholder-slate-400 text-sm"
-            />
-            <button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200">
-              Send
-            </button>
-          </div>
-        </div>
-      )}
-
-      {infoVisible && (
-        <div className="fixed right-4 top-20 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-amber-200">ℹ️ Game Info</h3>
-            <button 
-              onClick={() => setInfoVisible(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div>
-              <span className="text-slate-400">Game Code:</span>
-              <span className="ml-2 font-mono text-amber-300">{gameState.gameCode || 'DEMO'}</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Status:</span>
-              <span className="ml-2 text-emerald-400">{gameState.status}</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Current Turn:</span>
-              <span className={`ml-2 ${gameState.currentTurn === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn}
-              </span>
-            </div>
-            <div className="pt-2 border-t border-slate-600">
-              <div className="text-amber-200 font-medium mb-2">Team Scores:</div>
-              <div className="flex justify-between items-center">
-                <span className="text-red-400">🔴 Red:</span>
-                <span className="text-red-300 font-medium">{stats.red.remaining} left</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-blue-400">🔵 Blue:</span>
-                <span className="text-blue-300 font-medium">{stats.blue.remaining} left</span>
-              </div>
-            </div>
-            {currentPlayer && (
-              <div className="pt-2 border-t border-slate-600">
-                <div className="text-amber-200 font-medium mb-2">Your Info:</div>
-                <div>
-                  <span className="text-slate-400">Name:</span>
-                  <span className="ml-2 text-amber-300">{currentPlayer.username}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Team:</span>
-                  <span className={`ml-2 ${currentPlayer.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                    {currentPlayer.team}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Role:</span>
-                  <span className="ml-2 text-slate-300">{currentPlayer.role}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Game Over Modal */}
-      {gameState.status === 'finished' && gameState.winner && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-600">
-            <h2 className="text-4xl font-bold text-center mb-4 text-amber-100">🎉 Game Over! 🎉</h2>
-            <div className={`text-3xl font-bold text-center mb-6 ${gameState.winner === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-              {gameState.winner === 'red' ? '🔴' : '🔵'} {gameState.winner.charAt(0).toUpperCase() + gameState.winner.slice(1)} Team Wins!
-            </div>
-            <div className="flex gap-4">
-              <button
-                onClick={() => window.location.reload()}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold"
-              >
-                🔄 New Game
-              </button>
-              <button
-                onClick={() => gameService.resetGame()}
-                className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-3 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold"
-              >
-                🎮 Play Again
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default GameBoard;
-
-
-============================================================
-FILE: frontend/src/pages/HomePage.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\HomePage.tsx
-SIZE: 1587 characters
-============================================================
-import React from 'react';
-import { socketService } from '../services/socketService';
-import ChatRoom from '../components/Chat/ChatRoom';
-import GamesList from '../components/GamesList';
-
-const HomePage: React.FC = () => {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden relative">
-      {/* Background Pattern - Matching GameBoard */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
-      </div>
-
-      <div className="relative z-10 max-w-7xl mx-auto p-6">
-        {/* Hero Section with Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-violet-400 to-indigo-400 bg-clip-text text-transparent mb-4 drop-shadow-lg">
-            Welcome to Codenames Online!
-          </h1>
-          <p className="text-l text-slate-300 max-w-2xl mx-auto">
-            Play Codenames with your friends online! Create a game lobby or join an existing one to start your spy mission.
-          </p>
-        </div>
-        
-        {/* Games List Component */}
-        <GamesList className="mb-8" />
-      </div>
-    </div>
-  );
-};
-
-export default HomePage;
-
 
 ============================================================
 FILE: frontend/src/components/GamesList/GamesList.tsx
 PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GamesList\GamesList.tsx
-SIZE: 13093 characters
+SIZE: 11005 characters
 ============================================================
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -1252,6 +22,7 @@ interface GameLobbyListItem {
   status: string;
   playerCount: number;
   players: string[];
+  ownerUsername: string;
   createdAt: string;
   lastActivity: string;
 }
@@ -1270,6 +41,128 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
   const [isLoadingLobbies, setIsLoadingLobbies] = useState(false);
   const navigate = useNavigate();
 
+  // Load game lobbies from backend
+  const loadGameLobbiesList = async () => {
+    try {
+      setIsLoadingLobbies(true);
+      setError('');
+      const response = await fetch('/api/gameLobbies');
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setGameLobbies(data.gameLobbies || []);
+      } else {
+        throw new Error(data.error || 'Failed to load game lobbies');
+      }
+    } catch (err) {
+      console.error('❌ Error loading game lobbies:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load game lobbies');
+      setGameLobbies([]);
+    } finally {
+      setIsLoadingLobbies(false);
+    }
+  };
+
+  // Create a new game lobby
+  const handleCreateGameLobby = async () => {
+    try {
+      setIsCreating(true);
+      setError('');
+      
+      // Get user info from localStorage (assuming auth service stores it there)
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      
+      const response = await fetch('/api/gameLobbies/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user?.id || 'anonymous',
+          username: user?.username || 'Anonymous'
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        navigate(`/lobby/${data.lobbyCode}`);
+      } else {
+        throw new Error(data.error || 'Failed to create game lobby');
+      }
+    } catch (err) {
+      console.error('❌ Error creating game lobby:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create game lobby');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  // Join game with code input
+  const handleJoinGameLobby = async () => {
+    if (!lobbyCode.trim()) return;
+    
+    try {
+      setIsJoining(true);
+      setError('');
+      
+      // Get user info from localStorage
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      
+      const response = await fetch('/api/gameLobbies/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lobbyCode: lobbyCode.trim().toUpperCase(),
+          userId: user?.id || 'anonymous',
+          username: user?.username || 'Anonymous'
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        navigate(`/lobby/${data.lobbyCode}`);
+      } else {
+        throw new Error(data.error || 'Failed to join game lobby');
+      }
+    } catch (err) {
+      console.error('❌ Error joining game lobby:', err);
+      setError(err instanceof Error ? err.message : 'Failed to join game lobby');
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  // Join game from lobby list
+  const handleJoinGameFromList = (code: string) => {
+    setLobbyCode(code);
+    handleJoinGameLobby();
+  };
+
+  // Handle lobby code input change
+  const handleLobbyCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase().slice(0, 6);
+    setLobbyCode(value);
+  };
+
   // Load game lobbies list on component mount and refresh periodically
   useEffect(() => {
     loadGameLobbiesList();
@@ -1277,177 +170,14 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
     // Refresh lobbies list every 10 seconds
     const interval = setInterval(loadGameLobbiesList, 10000);
     
+    // Return cleanup function - NOT JSX!
     return () => clearInterval(interval);
   }, []);
 
-  const loadGameLobbiesList = async () => {
-    setIsLoadingLobbies(true);
-    try {
-      console.log('📋 Loading game lobbies list...');
-      const response = await fetch('/api/gamelobbies');
-      const data = await response.json();
-      
-      if (data.success) {
-        setGameLobbies(data.gameLobbies || []);
-        console.log(`✅ Loaded ${data.gameLobbies?.length || 0} game lobbies`);
-      } else {
-        console.error('Failed to load game lobbies list:', data.error);
-      }
-    } catch (err) {
-      console.error('Error loading game lobbies list:', err);
-    }
-    setIsLoadingLobbies(false);
-  };
-
-  // Better error handling function
-  const handleApiResponse = async (response: Response) => {
-    const contentType = response.headers.get('content-type');
-    
-    if (!response.ok) {
-      if (!contentType?.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(`HTTP ${response.status}: Server returned HTML instead of JSON. Check if backend is running and proxy is configured.`);
-      }
-    }
-    
-    if (contentType?.includes('application/json')) {
-      return await response.json();
-    } else {
-      const text = await response.text();
-      throw new Error(`Expected JSON but got: ${contentType}. Response: ${text.substring(0, 100)}...`);
-    }
-  };
-
-  const handleCreateGameLobby = async () => {
-    setIsCreating(true);
-    setError('');
-    
-    try {
-      console.log('🎮 Creating game lobby...');
-      
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
-      const response = await fetch('/api/gamelobbies/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          userId: user.id || `user_${Date.now()}`,
-          username: user.username || 'Anonymous',
-          debug: true 
-        })
-      });
-
-      const data = await handleApiResponse(response);
-      
-      if (data.success && data.lobbyCode) {
-        console.log('🎉 Navigating to game lobby:', data.lobbyCode);
-        // Refresh games list before navigating
-        loadGameLobbiesList();
-        navigate(`/lobby/${data.lobbyCode}`);
-      } else {
-        setError(data.error || 'Failed to create game lobby');
-      }
-    } catch (err: any) {
-      console.error('💥 Error creating game lobby:', err);
-      setError(err.message);
-    }
-    
-    setIsCreating(false);
-  };
-
-  const handleJoinGameLobby = async () => {
-    if (!lobbyCode.trim()) {
-      setError('Please enter a lobby code');
-      return;
-    }
-    
-    setIsJoining(true);
-    setError('');
-
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
-      const response = await fetch('/api/gamelobbies/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          lobbyCode: lobbyCode.trim().toUpperCase(),
-          userId: user.id || `user_${Date.now()}`,
-          username: user.username || 'Anonymous'
-        })
-      });
-
-      const data = await handleApiResponse(response);
-      
-      if (data.success && data.lobbyCode) {
-        console.log('🎉 Navigating to game lobby:', data.lobbyCode);
-        navigate(`/lobby/${data.lobbyCode}`);
-      } else {
-        setError(data.error || 'Failed to join game lobby');
-      }
-    } catch (err: any) {
-      console.error('💥 Error joining game lobby:', err);
-      setError(err.message);
-    }
-    
-    setIsJoining(false);
-  };
-
-  const handleJoinGameFromList = async (gameCode: string) => {
-    try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
-      const response = await fetch('/api/gamelobbies/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          lobbyCode: gameCode,
-          userId: user.id || `user_${Date.now()}`,
-          username: user.username || 'Anonymous'
-        })
-      });
-
-      const data = await handleApiResponse(response);
-      
-      if (data.success) {
-        navigate(`/lobby/${gameCode}`);
-      } else {
-        setError(data.error || 'Failed to join game lobby');
-      }
-    } catch (err: any) {
-      console.error('💥 Error joining game lobby from list:', err);
-      setError(err.message);
-    }
-  };
-
-  const handleLobbyCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setLobbyCode(e.target.value.toUpperCase());
-    if (error) setError('');
-  };
-
-  const getTimeAgo = (timestamp: string) => {
-    const now = new Date();
-    const time = new Date(timestamp);
-    const diffMs = now.getTime() - time.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
-
+  // Main component return - THIS is where the JSX goes!
   return (
     <div className={`${className}`}>
-      <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-2xl shadow-2xl border border-slate-600/50 p-8 backdrop-blur-lg">
+      <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-lg sm:rounded-2xl shadow-2xl border border-slate-600/50 p-3 sm:p-6 lg:p-8 backdrop-blur-lg max-h-[90vh] flex flex-col">
 
         {/* Error Display */}
         {error && (
@@ -1456,55 +186,74 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
           </div>
         )}
 
-        {/* Active Game Lobbies List - Main Focus */}
-        <div className="mb-8">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl font-semibold text-slate-100 flex items-center">
-              <span className="text-2xl mr-3">🎯</span>
-              Active Game Lobbies
-            </h3>
+        {/* Create New Game Button */}
+        <div className="mb-6">
+          <button 
+            onClick={handleCreateGameLobby}
+            disabled={isCreating}
+            className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-3 px-6 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-emerald-500/25 text-lg"
+          >
+            {isCreating ? (
+              <span className="flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
+                Creating Game...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center">
+                <span className="text-xl mr-2">🎮</span>
+                Create New Game
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Active Game Lobbies List */}
+        <div className="mb-4 sm:mb-6 lg:mb-8 flex-1 flex flex-col min-h-0">
+          <div className="flex justify-between items-center mb-3 sm:mb-4 lg:mb-6">
+            <h3 className="text-lg sm:text-xl font-semibold text-slate-100">Active Game Lobbies</h3>
             <button 
               onClick={loadGameLobbiesList}
               disabled={isLoadingLobbies}
               className="text-blue-400 hover:text-blue-300 font-medium flex items-center space-x-2 transition-colors duration-200"
             >
-              <span>{isLoadingLobbies ? '🔄 Loading...' : '🔄 Refresh'}</span>
+              <span>{isLoadingLobbies ? '🔄' : '🔄'}</span>
             </button>
           </div>
           
-          {/* Game Lobbies List Container */}
-          <div className="p-6 min-h-[300px]">
+          <div className="p-2 sm:p-4 lg:p-6 max-h-[400px] sm:max-h-[500px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
             {gameLobbies.length > 0 ? (
-              <div className="space-y-4">
+              <div className="grid gap-4">
                 {gameLobbies.map((lobby) => (
-                  <div key={lobby.code} className="flex items-center justify-between p-4 hover:bg-slate-700/20 transition-all duration-200 rounded-lg group">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-6">
-                        <div className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white px-3 py-2 rounded-lg font-mono font-bold text-lg shadow-lg">
-                          {lobby.code}
-                        </div>
-                        <div className="text-slate-300">
-                          <div className="flex items-center space-x-4 mb-1">
-                            <span className="font-semibold text-slate-200">{lobby.playerCount} player{lobby.playerCount !== 1 ? 's' : ''}</span>
-                            <span className="text-sm text-slate-400">•</span>
-                            <span className="text-sm">{getTimeAgo(lobby.lastActivity)}</span>
-                            <span className="text-sm text-slate-400">•</span>
-                            <span className="text-emerald-400 capitalize font-medium">{lobby.status}</span>
-                          </div>
-                          {lobby.players.length > 0 && (
-                            <div className="text-sm text-slate-400">
-                              <span className="font-medium">Players:</span> {lobby.players.join(', ')}
-                            </div>
-                          )}
-                        </div>
+                  <div key={lobby.code} className="border-2 border-slate-600 rounded-lg bg-slate-800/50 p-3 sm:p-4">
+                    {/* Title Section */}
+                    <div className="flex items-center justify-between mb-3">
+                      {/* Left: User's Game */}
+                      <h3 className="text-lg font-semibold text-slate-100">
+                        {lobby.ownerUsername}'s Game
+                      </h3>
+                      
+                      {/* Right: ID */}
+                      <div className="text-sm text-slate-400 font-mono">
+                        ID:{lobby.code}
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleJoinGameFromList(lobby.code)}
-                      className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-emerald-500/25"
-                    >
-                      Join Lobby
-                    </button>
+
+                    {/* Players Info */}
+                    <div className="text-sm text-slate-300 mb-2 text-left">
+                      <span className="font-medium">Players:</span> {lobby.players.length > 0 ? lobby.players.join(', ') : 'None'}
+                    </div>
+                    
+                    <hr className="border-slate-600 mb-4" />
+                    
+                    {/* Join Game Button */}
+                    <div className="border-2 border-slate-600 rounded">
+                      <button
+                        onClick={() => handleJoinGameFromList(lobby.code)}
+                        className="w-full py-2 px-4 text-slate-300 hover:bg-slate-700/50 transition-all duration-200 font-medium"
+                      >
+                        Join Game
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1518,13 +267,10 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
           </div>
         </div>
 
-        {/* Quick Actions - Create & Join */}
-        <div className="border-t border-slate-600/30 pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* Join with Code - Left Side */}
-          <div className="p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-xl">
-            <h4 className="text-lg font-semibold text-slate-100 mb-4 flex items-center">
+        {/* Join with Code */}
+        <div>
+          <div className="p-3 sm:p-4 lg:p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-lg sm:rounded-xl">
+            <h4 className="text-base sm:text-lg font-semibold text-slate-100 mb-3 sm:mb-4 flex items-center">
               <span className="text-xl mr-2">🚪</span>
               Join with Code
             </h4>
@@ -1553,31 +299,6 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
                 )}
               </button>
             </div>
-          </div>
-
-          {/* Create New Game Lobby - Right Side */}
-          <div className="p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-xl">
-            <h4 className="text-lg font-semibold text-slate-100 mb-4 flex items-center">
-              <span className="text-xl mr-2">🎮</span>
-              Create New Lobby
-            </h4>
-            <div className="text-center">
-              <button 
-                onClick={handleCreateGameLobby}
-                disabled={isCreating}
-                className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-emerald-500/25"
-              >
-                {isCreating ? (
-                  <span className="flex items-center justify-center">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Creating...
-                  </span>
-                ) : (
-                  'Create'
-                )}
-              </button>
-            </div>
-          </div>
           </div>
         </div>
       </div>
