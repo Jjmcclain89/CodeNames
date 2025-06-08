@@ -6,10 +6,13 @@ import { LobbyChat, TeamSetup } from '../components/GameLobby';
 interface Player {
   id: string;
   username: string;
-  team?: string;
-  role?: string;
-  isOnline?: boolean;
+  isOnline: boolean;
+  socketId: string;
 }
+
+
+
+
 
 interface GameLobbyMessage {
   id: string;
@@ -25,7 +28,7 @@ const GameLobbyPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [lobbyState, setLobbyState] = useState<any>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [gameState, setGameState] = useState<GameState | null>(null);
   const [messages, setMessages] = useState<GameLobbyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -46,6 +49,7 @@ const GameLobbyPage: React.FC = () => {
         socketService.socket.off('new-lobby-message');
         socketService.socket.off('lobby-updated');
         socketService.socket.off('game-created');
+        socketService.socket.off('game-started');
       }
     };
   }, [lobbyId]);
@@ -74,7 +78,7 @@ const GameLobbyPage: React.FC = () => {
         const lobbyData = await lobbyResponse.json();
         if (lobbyData.success) {
           setLobbyState(lobbyData.gameLobby);
-          setPlayers(lobbyData.gameLobby.players || []);
+          setGameState(lobbyData.gameLobby);
         }
       } else if (lobbyResponse.status === 404) {
         setError('Game lobby not found - the lobby code may be invalid or expired');
@@ -129,26 +133,33 @@ const GameLobbyPage: React.FC = () => {
     // Player events
     socketService.socket.on('player-joined-lobby', (data: any) => {
       console.log('👥 Player joined lobby:', data);
-      setPlayers(prev => [...prev.filter(p => p.id !== data.player.id), data.player]);
+      // Player join/leave events will be handled by lobby-updated event
+      // No need to manually update gameState here
     });
 
     socketService.socket.on('player-left-lobby', (data: any) => {
       console.log('👥 Player left lobby:', data);
-      setPlayers(prev => prev.filter(p => p.id !== data.player.id));
+      // Player join/leave events will be handled by lobby-updated event
+      // No need to manually update gameState here
     });
 
     // Lobby updates
     socketService.socket.on('lobby-updated', (lobbyData: any) => {
       console.log('🎮 Lobby updated:', lobbyData);
-      console.log('🎮 Updated lobby players:', lobbyData.players?.length || 0);
+      console.log('🎮 Updated lobby:', lobbyData);
       setLobbyState(lobbyData);
-      setPlayers(lobbyData.players || []);
+      setGameState(lobbyData);
       
       // Log team assignments for debugging
-      if (lobbyData.players) {
-        lobbyData.players.forEach((p: any, i: number) => {
-          console.log(`  ${i+1}. ${p.username} - ${p.team}/${p.role}`);
-        });
+      if (lobbyData.redTeam || lobbyData.blueTeam) {
+        console.log('Red team:', lobbyData.redTeam ? {
+          spymaster: lobbyData.redTeam.spymaster?.username,
+          operatives: lobbyData.redTeam.operatives?.map((p: any) => p.username)
+        } : 'empty');
+        console.log('Blue team:', lobbyData.blueTeam ? {
+          spymaster: lobbyData.blueTeam.spymaster?.username,
+          operatives: lobbyData.blueTeam.operatives?.map((p: any) => p.username)
+        } : 'empty');
       }
     });
 
@@ -161,6 +172,11 @@ const GameLobbyPage: React.FC = () => {
     socketService.socket.on('game-created', (data: any) => {
       console.log('🎮 Game created, navigating to:', data.gameId);
       navigate(`/game/${data.gameId}`);
+    });
+    // Game started (redirect from backend)
+    socketService.socket.on('game-started', (data: any) => {
+      console.log('🎮 Game started, redirecting to:', data.redirectTo);
+      navigate(data.redirectTo);
     });
   };
 
@@ -179,7 +195,7 @@ const GameLobbyPage: React.FC = () => {
 
   const handleStartGame = async () => {
     if (!canStartGame()) {
-      setError('Need players on both teams to start');
+      setError('Need at least one valid team (spymaster + operatives) and no invalid teams');
       return;
     }
 
@@ -206,12 +222,32 @@ const GameLobbyPage: React.FC = () => {
   };
 
   const canStartGame = () => {
-    if (!players) return false;
+    if (!gameState) return false;
     
-    const redPlayers = players.filter(p => p.team === 'red');
-    const bluePlayers = players.filter(p => p.team === 'blue');
+    // Check if at least one team is valid (has spymaster + operatives)
+    const redTeamValid = gameState.redTeam && 
+                        gameState.redTeam.spymaster && 
+                        gameState.redTeam.operatives.length > 0;
+                        
+    const blueTeamValid = gameState.blueTeam && 
+                         gameState.blueTeam.spymaster && 
+                         gameState.blueTeam.operatives.length > 0;
     
-    return redPlayers.length > 0 && bluePlayers.length > 0;
+    // Rule 1: At least one team must be valid
+    const hasValidTeam = redTeamValid || blueTeamValid;
+    
+    // Rule 2: No teams can be invalid (if team exists, it must be valid)
+    // A team exists if it has a spymaster or operatives
+    const redTeamExists = gameState.redTeam && 
+                         (gameState.redTeam.spymaster || gameState.redTeam.operatives.length > 0);
+    const blueTeamExists = gameState.blueTeam && 
+                          (gameState.blueTeam.spymaster || gameState.blueTeam.operatives.length > 0);
+    
+    const redTeamInvalid = redTeamExists && !redTeamValid;
+    const blueTeamInvalid = blueTeamExists && !blueTeamValid;
+    const hasInvalidTeam = redTeamInvalid || blueTeamInvalid;
+    
+    return hasValidTeam && !hasInvalidTeam;
   };
 
   const sendMessage = () => {
@@ -333,7 +369,7 @@ const GameLobbyPage: React.FC = () => {
           <div className="lg:col-span-2 space-y-6">
             <TeamSetup
               lobbyId={lobbyId || ''}
-              players={players}
+              gameState={gameState}
               currentUser={currentUser}
               isConnected={isConnected}
               isCreating={isCreating}
@@ -346,7 +382,10 @@ const GameLobbyPage: React.FC = () => {
           {/* Sidebar - Chat and Players */}
           <div>
             <LobbyChat
-              players={players}
+              players={gameState ? [
+                ...(gameState.redTeam ? [gameState.redTeam.spymaster, ...gameState.redTeam.operatives] : []),
+                ...(gameState.blueTeam ? [gameState.blueTeam.spymaster, ...gameState.blueTeam.operatives] : [])
+              ] : []}
               messages={messages}
               newMessage={newMessage}
               setNewMessage={setNewMessage}

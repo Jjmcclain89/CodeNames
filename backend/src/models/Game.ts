@@ -1,5 +1,5 @@
-// Game Model for Codenames - Integrates with existing in-memory storage
-import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS } from '../../../shared/types/game';
+// Game Model for Codenames - Updated for new team structure
+import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS, Team, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, canStartGame as canStartGameHelper } from '../../../shared/types/game';
 
 export class CodenamesGameModel {
   private game: CodenamesGame;
@@ -19,8 +19,9 @@ export class CodenamesGameModel {
       id: this.generateGameId(),
       gameCode,
       status: 'waiting',
-      currentTurn: startingTeam, // ✅ Team with more words goes first
-      players: [],
+      currentTurn: startingTeam,
+      redTeam: undefined,   // Start with no teams
+      blueTeam: undefined,  // Start with no teams
       board,
       guessesRemaining: 0,
       createdAt: new Date().toISOString(),
@@ -45,37 +46,60 @@ export class CodenamesGameModel {
     return this.game.gameCode;
   }
 
-  // Player management
+  // Player management - Updated for team structure
   addPlayer(playerId: string, username: string, socketId: string): boolean {
-    if (this.game.players.length >= GAME_CONFIG.MAX_PLAYERS) {
+    const allPlayers = getAllPlayers(this.game);
+    
+    if (allPlayers.length >= GAME_CONFIG.MAX_PLAYERS) {
       return false;
     }
 
-    if (this.game.players.find(p => p.id === playerId)) {
+    if (allPlayers.find(p => p.id === playerId)) {
       return false; // Player already exists
     }
 
-    const player: GamePlayer = {
-      id: playerId,
-      username,
-      team: 'neutral',
-      role: 'operative',
-      isOnline: true,
-      socketId
-    };
-
-    this.game.players.push(player);
+    // For now, just track that we added the player
+    // They'll be assigned to a team via assignPlayerToTeam
+    console.log(`✅ Player ${username} (${playerId}) ready to join teams`);
     this.updateTimestamp();
     return true;
   }
 
   removePlayer(playerId: string): boolean {
-    const index = this.game.players.findIndex(p => p.id === playerId);
-    if (index === -1) return false;
-
-    this.game.players.splice(index, 1);
-    this.updateTimestamp();
-    return true;
+    let removed = false;
+    
+    // Remove from red team
+    if (this.game.redTeam) {
+      if (this.game.redTeam.spymaster && this.game.redTeam.spymaster.id === playerId) {
+        this.game.redTeam = undefined; // Remove entire team if spymaster leaves
+        removed = true;
+      } else if (this.game.redTeam.operatives) {
+        const initialLength = this.game.redTeam.operatives.length;
+        this.game.redTeam.operatives = this.game.redTeam.operatives.filter(p => p.id !== playerId);
+        if (this.game.redTeam.operatives.length < initialLength) {
+          removed = true;
+        }
+      }
+    }
+    
+    // Remove from blue team
+    if (this.game.blueTeam) {
+      if (this.game.blueTeam.spymaster && this.game.blueTeam.spymaster.id === playerId) {
+        this.game.blueTeam = undefined; // Remove entire team if spymaster leaves
+        removed = true;
+      } else if (this.game.blueTeam.operatives) {
+        const initialLength = this.game.blueTeam.operatives.length;
+        this.game.blueTeam.operatives = this.game.blueTeam.operatives.filter(p => p.id !== playerId);
+        if (this.game.blueTeam.operatives.length < initialLength) {
+          removed = true;
+        }
+      }
+    }
+    
+    if (removed) {
+      this.updateTimestamp();
+    }
+    return removed;
   }
 
   assignPlayerToTeam(playerId: string, team: TeamColor, role: PlayerRole): boolean {
@@ -83,27 +107,71 @@ export class CodenamesGameModel {
       return false;
     }
 
-    const player = this.game.players.find(p => p.id === playerId);
-    if (!player) return false;
+    // Create player object
+    const player: GamePlayer = {
+      id: playerId,
+      username: this.getPlayerUsername(playerId) || 'Unknown',
+      isOnline: true,
+      socketId: '' // Will be updated by service layer
+    };
 
-    // Check if team already has a spymaster
-    if (role === 'spymaster') {
-      const existingSpymaster = this.game.players.find(
-        p => p.team === team && p.role === 'spymaster' && p.id !== playerId
-      );
-      if (existingSpymaster) {
-        return false;
+    // Remove player from any existing team first
+    this.removePlayer(playerId);
+
+    if (team === 'red') {
+      if (role === 'spymaster') {
+        // Can only have one spymaster - replace existing team or create new
+        this.game.redTeam = {
+          spymaster: player,
+          operatives: this.game.redTeam?.operatives || []
+        };
+      } else {
+        // Adding operative
+        if (!this.game.redTeam) {
+          // Can't add operative without spymaster - return false
+          return false;
+        }
+        this.game.redTeam.operatives.push(player);
+      }
+    } else if (team === 'blue') {
+      if (role === 'spymaster') {
+        // Can only have one spymaster - replace existing team or create new
+        this.game.blueTeam = {
+          spymaster: player,
+          operatives: this.game.blueTeam?.operatives || []
+        };
+      } else {
+        // Adding operative
+        if (!this.game.blueTeam) {
+          // Can't add operative without spymaster - return false
+          return false;
+        }
+        this.game.blueTeam.operatives.push(player);
       }
     }
 
-    player.team = team;
-    player.role = role;
     this.updateTimestamp();
     return true;
   }
 
-  updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
-    const player = this.game.players.find(p => p.id === playerId);
+
+  // Set teams wholesale (for lobby-to-game transfer)
+  setTeams(redTeam?: Team, blueTeam?: Team): void {
+    console.log('🔄 [GAME MODEL] setTeams called with:', {
+      redTeam: redTeam ? `Spymaster: ${redTeam.spymaster?.username || 'none'}, Operatives: ${redTeam.operatives?.map(p => p.username).join(', ') || 'none'}` : 'undefined',
+      blueTeam: blueTeam ? `Spymaster: ${blueTeam.spymaster?.username || 'none'}, Operatives: ${blueTeam.operatives?.map(p => p.username).join(', ') || 'none'}` : 'undefined'
+    });
+    
+    this.game.redTeam = redTeam;
+    this.game.blueTeam = blueTeam;
+    this.updateTimestamp();
+    
+    console.log('✅ [GAME MODEL] Teams set successfully');
+  }
+
+    updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
+    const allPlayers = getAllPlayers(this.game);
+    const player = allPlayers.find(p => p.id === playerId);
     if (!player) return false;
 
     player.isOnline = isOnline;
@@ -111,52 +179,21 @@ export class CodenamesGameModel {
     return true;
   }
 
-  // Game flow
+  // Game flow - Updated validation
   canStartGame(): boolean {
-    console.log('🔍 [VALIDATION] Checking if game can start');
+    console.log('🔍 [VALIDATION] Checking if game can start with new team structure');
     console.log('🔍 [VALIDATION] Game status:', this.game.status);
-    console.log('🔍 [VALIDATION] Player count:', this.game.players.length);
     
     if (this.game.status !== 'waiting') {
       console.log('❌ [VALIDATION] Game not in waiting status');
       return false;
     }
     
-    // Log all players and their teams/roles
-    console.log('🔍 [VALIDATION] Current players:');
-    this.game.players.forEach((p, i) => {
-      console.log(`  ${i+1}. ${p.username} - Team: ${p.team}, Role: ${p.role}`);
-    });
+    console.log('🔍 [VALIDATION] Red team valid:', isTeamValid(this.game.redTeam));
+    console.log('🔍 [VALIDATION] Blue team valid:', isTeamValid(this.game.blueTeam));
     
-    // For testing: allow starting with just one player if they're assigned to a team
-    const hasTeamPlayers = this.game.players.some(p => p.team === 'red' || p.team === 'blue');
-    if (process.env.NODE_ENV === 'development' && this.game.players.length >= 1 && hasTeamPlayers) {
-      console.log('✅ [VALIDATION] Development mode - allowing start with assigned players');
-      return true;
-    }
-    
-    // Relaxed validation for testing - just need players on teams
-    if (this.game.players.length < 2) {
-      console.log('❌ [VALIDATION] Need at least 2 players');
-      return false;
-    }
-
-    const redSpymaster = this.game.players.find(p => p.team === 'red' && p.role === 'spymaster');
-    const blueSpymaster = this.game.players.find(p => p.team === 'blue' && p.role === 'spymaster');
-    const redOperatives = this.game.players.filter(p => p.team === 'red' && p.role === 'operative');
-    const blueOperatives = this.game.players.filter(p => p.team === 'blue' && p.role === 'operative');
-    
-    console.log('🔍 [VALIDATION] Red spymaster:', !!redSpymaster);
-    console.log('🔍 [VALIDATION] Blue spymaster:', !!blueSpymaster);
-    console.log('🔍 [VALIDATION] Red operatives:', redOperatives.length);
-    console.log('🔍 [VALIDATION] Blue operatives:', blueOperatives.length);
-
-    // Relaxed validation: just need at least one player per team (can be spymaster OR operative)
-    const redPlayers = this.game.players.filter(p => p.team === 'red');
-    const bluePlayers = this.game.players.filter(p => p.team === 'blue');
-    
-    const canStart = redPlayers.length > 0 && bluePlayers.length > 0;
-    console.log('🔍 [VALIDATION] Can start game:', canStart, '(Red:', redPlayers.length, 'Blue:', bluePlayers.length, ')');
+    const canStart = canStartGameHelper(this.game);
+    console.log('🔍 [VALIDATION] Can start game:', canStart);
     
     return canStart;
   }
@@ -171,11 +208,12 @@ export class CodenamesGameModel {
     return true;
   }
 
-  // Game actions
+  // Game actions - Updated for team structure
   giveClue(playerId: string, word: string, number: number): boolean {
-    const player = this.game.players.find(p => p.id === playerId);
+    const playerTeam = getPlayerTeam(this.game, playerId);
+    const playerRole = getPlayerRole(this.game, playerId);
     
-    if (!player || player.role !== 'spymaster' || player.team !== this.game.currentTurn) {
+    if (playerRole !== 'spymaster' || playerTeam !== this.game.currentTurn) {
       return false;
     }
 
@@ -194,9 +232,10 @@ export class CodenamesGameModel {
   }
 
   revealCard(playerId: string, cardId: string): { success: boolean; card?: CodeCard; gameEnded?: boolean; winner?: TeamColor } {
-    const player = this.game.players.find(p => p.id === playerId);
+    const playerTeam = getPlayerTeam(this.game, playerId);
+    const playerRole = getPlayerRole(this.game, playerId);
     
-    if (!player || player.role !== 'operative' || player.team !== this.game.currentTurn) {
+    if (playerRole !== 'operative' || playerTeam !== this.game.currentTurn) {
       return { success: false };
     }
 
@@ -264,14 +303,17 @@ export class CodenamesGameModel {
 
   resetGame(): void {
     const gameCode = this.game.gameCode;
-    const players = this.game.players.map(p => ({ ...p, role: 'operative' as PlayerRole }));
+    // Preserve team assignments through reset
+    const redTeam = this.game.redTeam;
+    const blueTeam = this.game.blueTeam;
 
     this.game = {
       id: this.generateGameId(),
       gameCode,
       status: 'waiting',
       currentTurn: 'red',
-      players,
+      redTeam,
+      blueTeam,
       board: this.generateBoard(),
       guessesRemaining: 0,
       createdAt: new Date().toISOString(),
@@ -279,7 +321,12 @@ export class CodenamesGameModel {
     };
   }
 
-  // Private methods
+  // Helper methods
+  private getPlayerUsername(playerId: string): string | undefined {
+    const allPlayers = getAllPlayers(this.game);
+    return allPlayers.find(p => p.id === playerId)?.username;
+  }
+
   private generateBoard(config: GameConfig = GAME_CONFIG.STANDARD_SETUP): CodeCard[] {
     // Shuffle and pick 25 words
     const shuffledWords = [...CODENAMES_WORDS].sort(() => Math.random() - 0.5).slice(0, 25);

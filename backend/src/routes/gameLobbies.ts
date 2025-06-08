@@ -2,21 +2,25 @@ import express, { Request, Response } from 'express';
 
 const router = express.Router();
 
-// Define proper TypeScript interfaces
-interface GameLobbyPlayer {
+// Define proper TypeScript interfaces using new team structure
+interface Player {
   id: string;
   username: string;
-  team: string;
-  role: string;
   isOnline: boolean;
-  isOwner: boolean;
+  socketId?: string;
+}
+
+interface Team {
+  spymaster?: Player;
+  operatives: Player[];
 }
 
 interface GameLobby {
   id: string;
   code: string;
   owner: string;
-  players: GameLobbyPlayer[];
+  redTeam?: Team;
+  blueTeam?: Team;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +28,30 @@ interface GameLobby {
 
 // In-memory storage for game lobbies
 const gameLobbies = new Map<string, GameLobby>();
+
+// Helper function to get all players from both teams
+function getAllPlayers(lobby: GameLobby): Player[] {
+  const players: Player[] = [];
+  
+  if (lobby.redTeam) {
+    if (lobby.redTeam.spymaster) players.push(lobby.redTeam.spymaster);
+    players.push(...lobby.redTeam.operatives);
+  }
+  
+  if (lobby.blueTeam) {
+    if (lobby.blueTeam.spymaster) players.push(lobby.blueTeam.spymaster);
+    players.push(...lobby.blueTeam.operatives);
+  }
+  
+  return players;
+}
+
+// Helper function to find owner
+function findOwner(lobby: GameLobby): Player | undefined {
+  const allPlayers = getAllPlayers(lobby);
+  // For now, just return the first player as owner
+  return allPlayers[0];
+}
 
 // Generate lobby code
 function generateLobbyCode(): string {
@@ -52,22 +80,15 @@ router.post('/create', (req: Request, res: Response): void => {
       id: lobbyCode,
       code: lobbyCode,
       owner: userId || 'anonymous',
-      players: [],
       status: 'waiting',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     
-    // Add creator as first player
+    // Add creator as first player (neutral, not on a team yet)
     if (username && userId) {
-      gameLobby.players.push({
-        id: userId,
-        username,
-        team: 'neutral',
-        role: 'operative',
-        isOnline: true,
-        isOwner: true
-      });
+      // For now, don't assign the creator to any team automatically
+      // They'll join a team through the UI
     }
     
     gameLobbies.set(lobbyCode, gameLobby);
@@ -115,21 +136,15 @@ router.post('/join', (req: Request, res: Response): void => {
       return;
     }
     
-    // Add player to lobby if not already there
+    // Check if player is already in the lobby
     if (username && userId) {
-      const existingPlayer = gameLobby.players.find((p: GameLobbyPlayer) => p.id === userId);
+      const allPlayers = getAllPlayers(gameLobby);
+      const existingPlayer = allPlayers.find(p => p.id === userId);
       if (!existingPlayer) {
-        gameLobby.players.push({
-          id: userId,
-          username,
-          team: 'neutral',
-          role: 'operative',
-          isOnline: true,
-          isOwner: false
-        });
-        gameLobby.updatedAt = new Date().toISOString();
-        console.log(`✅ Added ${username} to game lobby ${lobbyCode}`);
+        // Don't add them to any team yet - they'll join through the UI
+        console.log(`✅ Player ${username} can join lobby ${lobbyCode}`);
       }
+      gameLobby.updatedAt = new Date().toISOString();
     }
     
     res.json({ 
@@ -194,16 +209,16 @@ router.get('/', (req: Request, res: Response): void => {
     console.log('📋 Listing all game lobbies...');
     
     const activeGameLobbies = Array.from(gameLobbies.values()).map(lobby => {
-      // Find the owner player to get their username
-      const ownerPlayer = lobby.players.find((p: GameLobbyPlayer) => p.isOwner);
+      const allPlayers = getAllPlayers(lobby);
+      const owner = findOwner(lobby);
       
       return {
         code: lobby.code,
         id: lobby.id,
         status: lobby.status,
-        playerCount: lobby.players.length,
-        players: lobby.players.map((p: GameLobbyPlayer) => p.username),
-        ownerUsername: ownerPlayer?.username || 'Unknown',
+        playerCount: allPlayers.length,
+        players: allPlayers.map(p => p.username),
+        ownerUsername: owner?.username || 'Unknown',
         createdAt: lobby.createdAt,
         lastActivity: lobby.updatedAt
       };
@@ -232,4 +247,4 @@ router.get('/', (req: Request, res: Response): void => {
 });
 
 export default router;
-export { gameLobbies, GameLobby, GameLobbyPlayer };
+export { gameLobbies, GameLobby, Player, Team };

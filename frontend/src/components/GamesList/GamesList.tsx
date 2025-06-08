@@ -198,8 +198,8 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
 
   // Main component return - THIS is where the JSX goes!
   return (
-    <div className={`${className} h-full`}>
-      <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-lg sm:rounded-2xl shadow-2xl border border-slate-600/50 p-3 sm:p-6 lg:p-8 backdrop-blur-lg h-[85vh] lg:h-[80vh] flex flex-col lg:flex-row lg:gap-8">
+    <div className={`${className}`}>
+      <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-lg sm:rounded-2xl shadow-2xl border border-slate-600/50 p-3 sm:p-6 lg:p-8 backdrop-blur-lg lg:h-[80vh] flex flex-col lg:flex-row lg:gap-8">
 
         {/* Error Display */}
         {error && (
@@ -268,7 +268,7 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
         </div>
 
         {/* Right Column: Active Game Lobbies */}
-        <div className="flex-1 flex flex-col min-h-0 lg:min-h-[400px]">
+        <div className="flex-1 flex flex-col h-auto">
           <div className="flex justify-between items-center mb-3 sm:mb-4 lg:mb-6">
             <h3 className="text-lg sm:text-xl font-semibold text-slate-100">Active Game Lobbies</h3>
             <button 
@@ -280,7 +280,7 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
             </button>
           </div>
           
-          <div className="p-2 sm:p-4 lg:p-6 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800 min-h-0">
+          <div className="p-2 sm:p-4 lg:p-6 lg:flex-1 lg:overflow-y-auto lg:min-h-0">
             {gameLobbies.length > 0 ? (
               <div className="grid gap-4">
                 {gameLobbies.map((lobby) => (

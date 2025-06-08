@@ -4,14 +4,26 @@ import TeamAssignmentPanel from './TeamAssignmentPanel';
 interface Player {
   id: string;
   username: string;
-  team?: string;
-  role?: string;
-  isOnline?: boolean;
+  isOnline: boolean;
+  socketId: string;
+}
+
+interface Team {
+  spymaster?: Player;
+  operatives: Player[];
+}
+
+interface GameState {
+  id: string;
+  gameCode: string;
+  status: string;
+  redTeam?: Team;
+  blueTeam?: Team;
 }
 
 interface TeamSetupProps {
   lobbyId: string;
-  players: Player[];
+  gameState: GameState | null;
   currentUser: any;
   isConnected: boolean;
   isCreating: boolean;
@@ -22,7 +34,7 @@ interface TeamSetupProps {
 
 const TeamSetup: React.FC<TeamSetupProps> = ({
   lobbyId,
-  players,
+  gameState,
   currentUser,
   isConnected,
   isCreating,
@@ -30,16 +42,39 @@ const TeamSetup: React.FC<TeamSetupProps> = ({
   onStartGame,
   canStartGame
 }) => {
+  // Helper function to get current user's team info for display purposes
   const getCurrentUserPlayer = () => {
-    return players.find(p => p.username === currentUser?.username || p.id === currentUser?.id);
-  };
-
-  const getTeamPlayers = (team: string) => {
-    return players.filter(p => p.team === team);
-  };
-
-  const hasSpymaster = (team: string) => {
-    return getTeamPlayers(team).some(p => p.role === 'spymaster');
+    if (!gameState || !currentUser) return null;
+    
+    // Check red team
+    if (gameState.redTeam) {
+      if (gameState.redTeam.spymaster?.id === currentUser.id || 
+          gameState.redTeam.spymaster?.username === currentUser.username) {
+        return { ...gameState.redTeam.spymaster, team: 'red', role: 'spymaster' };
+      }
+      const redOperative = gameState.redTeam.operatives.find(p => 
+        p.id === currentUser.id || p.username === currentUser.username
+      );
+      if (redOperative) {
+        return { ...redOperative, team: 'red', role: 'operative' };
+      }
+    }
+    
+    // Check blue team
+    if (gameState.blueTeam) {
+      if (gameState.blueTeam.spymaster?.id === currentUser.id || 
+          gameState.blueTeam.spymaster?.username === currentUser.username) {
+        return { ...gameState.blueTeam.spymaster, team: 'blue', role: 'spymaster' };
+      }
+      const blueOperative = gameState.blueTeam.operatives.find(p => 
+        p.id === currentUser.id || p.username === currentUser.username
+      );
+      if (blueOperative) {
+        return { ...blueOperative, team: 'blue', role: 'operative' };
+      }
+    }
+    
+    return null;
   };
 
   const userPlayer = getCurrentUserPlayer();
@@ -52,20 +87,18 @@ const TeamSetup: React.FC<TeamSetupProps> = ({
           <h2 className="text-2xl font-semibold text-slate-100 mb-2">🕵️ Choose Your Role</h2>
         </div>
 
-        {/* Team Selection Grid */}
+        {/* Team Selection Grid - Pass team objects directly */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <TeamAssignmentPanel
             team="red"
-            players={getTeamPlayers('red')}
-            hasSpymaster={hasSpymaster('red')}
+            teamData={gameState?.redTeam}
             currentUser={currentUser}
             onJoinTeam={onJoinTeam}
           />
           
           <TeamAssignmentPanel
             team="blue"
-            players={getTeamPlayers('blue')}
-            hasSpymaster={hasSpymaster('blue')}
+            teamData={gameState?.blueTeam}
             currentUser={currentUser}
             onJoinTeam={onJoinTeam}
           />
@@ -91,7 +124,7 @@ const TeamSetup: React.FC<TeamSetupProps> = ({
           </button>
           {!canStartGame() && !isCreating && (
             <p className="text-sm text-slate-400 mt-3">
-              Need players on both teams to start
+              Need at least one valid team (spymaster + operatives)
             </p>
           )}
         </div>

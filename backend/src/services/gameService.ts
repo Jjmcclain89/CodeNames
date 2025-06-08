@@ -1,6 +1,6 @@
 // Game Service - Manages games and integrates with existing storage
 import { CodenamesGameModel } from '../models/Game';
-import { CodenamesGame, TeamColor, PlayerRole } from '../../../shared/types/game';
+import { CodenamesGame, TeamColor, PlayerRole, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid } from '../../../shared/types/game';
 
 interface GameWithMeta {
   model: CodenamesGameModel;
@@ -9,7 +9,7 @@ interface GameWithMeta {
 
 export class GameService {
   private games: Map<string, GameWithMeta> = new Map();
-  private playerGameMap: Map<string, string> = new Map(); // playerId -> gameId
+  public playerGameMap: Map<string, string> = new Map(); // playerId -> gameId
   private gameCodes: Map<string, string> = new Map(); // gameCode -> gameId mapping
 
   // Game code management methods
@@ -143,9 +143,10 @@ export class GameService {
   deleteGame(gameId: string): boolean {
     const gameWithMeta = this.games.get(gameId);
     if (gameWithMeta) {
-      // Remove all players from the player map
+      // Remove all players from the player map using new helper
       const game = gameWithMeta.model.getGame();
-      game.players.forEach((player: any) => {
+      const allPlayers = getAllPlayers(game);
+      allPlayers.forEach((player: any) => {
         this.playerGameMap.delete(player.id);
       });
       
@@ -215,7 +216,8 @@ export class GameService {
         
         // Don't immediately delete empty games - they might be rejoined
         const gameState = game.getGame();
-        if (gameState.players.length === 0) {
+        const allPlayers = getAllPlayers(gameState);
+        if (allPlayers.length === 0) {
           console.log(`🎯 Game ${gameState.id} is now empty but keeping it alive for potential reconnection`);
           // this.deleteGame(gameState.id); // Commented out - let cleanupInactiveGames handle this later
         }
@@ -245,17 +247,19 @@ export class GameService {
 
     console.log(`🎯 [GAMESERVICE] Found game ${game.getId()} for player ${playerId}`);
     const preState = game.getGame();
-    console.log(`🎯 [GAMESERVICE] Pre-assignment game state:`, preState.players.map(p => `${p.username}(${p.team}/${p.role})`));
+    const preAllPlayers = getAllPlayers(preState);
+    console.log(`🎯 [GAMESERVICE] Pre-assignment game state:`, preAllPlayers.map(p => `${p.username}(${getPlayerTeam(preState, p.id)}/${getPlayerRole(preState, p.id)})`));
     
     const success = game.assignPlayerToTeam(playerId, team, role);
     
     const postState = game.getGame();
-    console.log(`🎯 [GAMESERVICE] Post-assignment game state:`, postState.players.map(p => `${p.username}(${p.team}/${p.role})`));
+    const postAllPlayers = getAllPlayers(postState);
+    console.log(`🎯 [GAMESERVICE] Post-assignment game state:`, postAllPlayers.map(p => `${p.username}(${getPlayerTeam(postState, p.id)}/${getPlayerRole(postState, p.id)})`));
     console.log(`🎯 [GAMESERVICE] Assignment result: ${success}`);
     
     return { 
       success, 
-      error: success ? undefined : 'Cannot assign to team - team may already have a spymaster' 
+      error: success ? undefined : 'Cannot assign to team - team may already have a spymaster or operatives need a spymaster first' 
     };
   }
 
@@ -281,7 +285,7 @@ export class GameService {
     console.log('🎯 [GAMESERVICE] Can start result:', canStart);
     
     if (!canStart) {
-      return { success: false, error: 'Cannot start game - need players on both teams' };
+      return { success: false, error: 'Cannot start game - need at least one valid team (spymaster + operatives)' };
     }
 
     console.log('🎯 [GAMESERVICE] Starting game...');
@@ -369,12 +373,15 @@ export class GameService {
       // Use roomCode as the display code (works for both room-based and code-based games)
       const displayCode = gameState.gameCode || gameId.substring(0, 6).toUpperCase();
       
+      // Get all players using new helper function
+      const allPlayers = getAllPlayers(gameState);
+      
       activeGames.push({
         code: displayCode,
         id: gameState.id,
         status: gameState.status,
-        playerCount: gameState.players.length,
-        players: gameState.players.map((p: any) => p.username),
+        playerCount: allPlayers.length,
+        players: allPlayers.map((p: any) => p.username),
         createdAt: gameState.createdAt || new Date().toISOString(),
         lastActivity: gameWithMeta.lastActivity.toISOString()
       });

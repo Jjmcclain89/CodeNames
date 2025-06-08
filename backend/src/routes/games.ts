@@ -55,7 +55,19 @@ router.get('/:gameCode', (req: Request, res: Response): void => {
       return;
     }
     
-    const game = gameService.getGameByCode(gameCode.toUpperCase());
+    let game = gameService.getGameByCode(gameCode.toUpperCase());
+    
+    // Fallback: try getGameForRoom if getGameByCode fails (for lobby-created games)
+    if (!game) {
+      console.log(`Game ${gameCode} not found via getGameByCode, trying getGameForRoom...`);
+      game = gameService.getGameForRoom(gameCode.toUpperCase());
+      
+      if (game) {
+        console.log(`Found game ${gameCode} via getGameForRoom, repairing mapping...`);
+        // Fix the mapping for future requests
+        (gameService as any).gameCodes.set(gameCode.toUpperCase(), game.getId());
+      }
+    }
     
     if (game) {
       const gameState = game.getGame();
@@ -144,7 +156,19 @@ router.post('/join', (req: Request, res: Response): void => {
       return;
     }
     
-    const game = gameService.getGameByCode(gameCode.toUpperCase());
+    let game = gameService.getGameByCode(gameCode.toUpperCase());
+    
+    // Fallback: try getGameForRoom if getGameByCode fails (for lobby-created games)
+    if (!game) {
+      console.log(`Game ${gameCode} not found via getGameByCode, trying getGameForRoom...`);
+      game = gameService.getGameForRoom(gameCode.toUpperCase());
+      
+      if (game) {
+        console.log(`Found game ${gameCode} via getGameForRoom, repairing mapping...`);
+        // Fix the mapping for future requests
+        (gameService as any).gameCodes.set(gameCode.toUpperCase(), game.getId());
+      }
+    }
     
     if (!game) {
       res.status(404).json({ 

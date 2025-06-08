@@ -17,10 +17,9 @@ export interface CodeCard {
 export interface GamePlayer {
   id: string;
   username: string;
-  team: TeamColor;
-  role: PlayerRole;
   isOnline: boolean;
   socketId: string;
+  // Note: team and role removed - now determined by team structure position
 }
 
 export interface GameClue {
@@ -30,12 +29,19 @@ export interface GameClue {
   timestamp: string;
 }
 
+// New Team structure
+export interface Team {
+  spymaster: GamePlayer;
+  operatives: GamePlayer[];
+}
+
 export interface CodenamesGame {
   id: string;
   gameCode: string;
   status: GameStatus;
   currentTurn: TeamColor;
-  players: GamePlayer[];
+  redTeam?: Team;   // undefined if empty
+  blueTeam?: Team;  // undefined if empty
   board: CodeCard[];
   currentClue?: GameClue;
   guessesRemaining: number;
@@ -52,8 +58,7 @@ export interface GameConfig {
   assassinCards: number; // 1
 }
 
-
-// Game Lobby Types (team assignment phase)
+// Game Lobby Types (team assignment phase) - Updated for new structure
 export interface GameLobbyMessage {
   id: string;
   username: string;
@@ -119,6 +124,51 @@ export const GAME_CONFIG = {
     neutralCards: 7,
     assassinCards: 1
   } as GameConfig
+};
+
+// Helper functions for new team structure
+export const getPlayerTeam = (game: CodenamesGame, playerId: string): TeamColor => {
+  if (game.redTeam?.spymaster.id === playerId) return 'red';
+  if (game.redTeam?.operatives.some(p => p.id === playerId)) return 'red';
+  if (game.blueTeam?.spymaster.id === playerId) return 'blue';
+  if (game.blueTeam?.operatives.some(p => p.id === playerId)) return 'blue';
+  return 'neutral';
+};
+
+export const getPlayerRole = (game: CodenamesGame, playerId: string): PlayerRole => {
+  if (game.redTeam?.spymaster.id === playerId || game.blueTeam?.spymaster.id === playerId) {
+    return 'spymaster';
+  }
+  return 'operative';
+};
+
+export const getAllPlayers = (game: CodenamesGame): GamePlayer[] => {
+  const players: GamePlayer[] = [];
+  if (game.redTeam) {
+    players.push(game.redTeam.spymaster, ...game.redTeam.operatives);
+  }
+  if (game.blueTeam) {
+    players.push(game.blueTeam.spymaster, ...game.blueTeam.operatives);
+  }
+  return players;
+};
+
+export const isTeamValid = (team?: Team): boolean => {
+  console.log(`team: {team}, spymaster: ${team?.spymaster}, operatives: ${team?.operatives.length}`);
+  return !!team && !!team.spymaster && team.operatives.length > 0;
+};
+
+export const canStartGame = (game: CodenamesGame): boolean => {
+  const redValid = isTeamValid(game.redTeam);
+  const blueValid = isTeamValid(game.blueTeam);
+  
+  console.log('🔍 [CANSTART] Red valid:', redValid, 'Blue valid:', blueValid);
+  
+  // Allow game to start with at least one valid team
+  const canStart = redValid || blueValid;
+  console.log('🔍 [CANSTART] Final result:', canStart);
+  
+  return canStart;
 };
 
 // Word list for game generation

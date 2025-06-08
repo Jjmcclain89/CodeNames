@@ -4,6 +4,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { gameService } from './services/gameService';
+import { getAllPlayers, getPlayerTeam, getPlayerRole } from '../../shared/types/game';
 import gameRoutes from './routes/games';
 import gameLobbyRoutes from './routes/gameLobbies';
 
@@ -203,6 +204,7 @@ import { GameService } from './services/gameService';
 // Add game socket handlers to existing socket connection
 function addGameHandlers(socket: any, io: any) {
   const user = connectedUsers.get(socket.id);
+  console.log('🚀 [DEBUG] User from socket:', user ? `${user.username} (${user.id})` : 'null');
   if (!user) {
     return;
   }
@@ -238,7 +240,7 @@ function addGameHandlers(socket: any, io: any) {
       if (success) {
         const gameState = game.getGame();
         socket.emit('game:state-updated', gameState);
-        socket.to(lobbyCode).emit('game:player-joined', gameState.players.find((p: any )=> p.id === user.id));
+        socket.to(lobbyCode).emit('game:player-joined', getAllPlayers(gameState).find((p: any) => p.id === user.id));
         console.log('🎮 Player', user.username, 'joined game in room:', lobbyCode);
       } else {
         socket.emit('game:error', 'Failed to join game');
@@ -286,7 +288,7 @@ function addGameHandlers(socket: any, io: any) {
           const gameState = game.getGame();
           console.log('🚀 [GAME START] Broadcasting game state to room:', gameState.gameCode);
           console.log('🚀 [GAME START] Game status:', gameState.status);
-          console.log('🚀 [GAME START] Players in game:', gameState.players.length);
+          console.log('🚀 [GAME START] Players in game:', getAllPlayers(gameState).length);
           io.to(gameState.gameCode).emit('game:state-updated', gameState);
           console.log('✅ [GAME START] Game started successfully by:', user.username);
         }
@@ -394,60 +396,105 @@ function addGameHandlers(socket: any, io: any) {
 // Room socket handlers
 
 socket.on('lobby:join-team', (data: { lobbyId: string; team: string; role: string }) => {
-  const user = connectedUsers.get(socket.id);
-  if (!user) {
-    socket.emit('error', { message: 'Not authenticated' });
-    return;
-  }
-  
-  console.log(`👥 ${user.username} joining ${data.team} team as ${data.role} in room ${data.lobbyId}`);
-  
-  try {
-    // Import rooms from routes/rooms.ts
-    const { gameLobbies } = require('./routes/gameLobbies');
-    
-    // Get the room
-    const gameLobby = gameLobbies.get(data.lobbyId.toUpperCase());
-    if (!gameLobby) {
-      socket.emit('error', { message: 'Room not found' });
+    const user = connectedUsers.get(socket.id);
+    if (!user) {
+      socket.emit('error', { message: 'Not authenticated' });
       return;
     }
     
-    // Find and update the player in the room
-    const playerIndex = gameLobby.players.findIndex((p: any) => p.id === user.id);
-    if (playerIndex !== -1) {
-      // Update existing player
-      gameLobby.players[playerIndex].team = data.team;
-      gameLobby.players[playerIndex].role = data.role;
-    } else {
-      // Add new player to room
-      gameLobby.players.push({
+    console.log(`👥 ${user.username} joining ${data.team} team as ${data.role} in room ${data.lobbyId}`);
+    
+    try {
+      // Import gameLobbies from routes
+      const { gameLobbies } = require('./routes/gameLobbies');
+      
+      // Get the lobby
+      const gameLobby = gameLobbies.get(data.lobbyId.toUpperCase());
+  console.log('🚀 [DEBUG] Found lobby:', !!gameLobby);
+  if (gameLobby) {
+    console.log('🚀 [DEBUG] Lobby red team:', gameLobby.redTeam);
+    console.log('🚀 [DEBUG] Lobby blue team:', gameLobby.blueTeam);
+  }
+      if (!gameLobby) {
+        socket.emit('error', { message: 'Lobby not found' });
+        return;
+      }
+      
+      const player = {
         id: user.id,
         username: user.username,
-        team: data.team,
-        role: data.role,
         isOnline: true,
-        isOwner: gameLobby.players.length === 0
+        socketId: socket.id
+      };
+      
+      console.log('👥 [DEBUG] Creating player object:', {
+        id: player.id,
+        username: player.username,
+        socketId: player.socketId
       });
+      
+      // Initialize teams if they don't exist
+      if (!gameLobby.redTeam) {
+        gameLobby.redTeam = { operatives: [] };
+      }
+      if (!gameLobby.blueTeam) {
+        gameLobby.blueTeam = { operatives: [] };
+      }
+      
+      // Remove player from any existing team first
+      if (gameLobby.redTeam.spymaster?.id === user.id) {
+        gameLobby.redTeam.spymaster = undefined;
+      }
+      if (gameLobby.blueTeam.spymaster?.id === user.id) {
+        gameLobby.blueTeam.spymaster = undefined;
+      }
+      gameLobby.redTeam.operatives = gameLobby.redTeam.operatives.filter((p: any) => p.id !== user.id);
+      gameLobby.blueTeam.operatives = gameLobby.blueTeam.operatives.filter((p: any) => p.id !== user.id);
+      
+      // Add player to new team and role
+      if (data.team === 'red') {
+        if (data.role === 'spymaster') {
+          gameLobby.redTeam.spymaster = player;
+        } else if (data.role === 'operative') {
+          gameLobby.redTeam.operatives.push(player);
+        }
+      } else if (data.team === 'blue') {
+        if (data.role === 'spymaster') {
+          gameLobby.blueTeam.spymaster = player;
+        } else if (data.role === 'operative') {
+          gameLobby.blueTeam.operatives.push(player);
+        }
+      }
+      
+      // Update timestamp
+      gameLobby.updatedAt = new Date().toISOString();
+
+      console.log('🔄 Updated lobby state:', {
+        redTeam: {
+          spymaster: gameLobby.redTeam.spymaster?.username,
+          operatives: gameLobby.redTeam.operatives.map((p: any) => p.username)
+        },
+        blueTeam: {
+          spymaster: gameLobby.blueTeam.spymaster?.username,
+          operatives: gameLobby.blueTeam.operatives.map((p: any) => p.username)
+        }
+      });
+
+      // Send updated lobby state to all players in the lobby
+      io.to(data.lobbyId.toUpperCase()).emit('lobby-updated', gameLobby);
+      
+    } catch (error) {
+      console.error('❌ Error updating lobby team assignment:', error);
+      socket.emit('error', { message: 'Failed to join team' });
     }
-    
-    // Update room timestamp
-    gameLobby.updatedAt = new Date().toISOString();
+  });
 
-    // Send updated room state to the requesting user first
-    socket.emit('lobby-updated', gameLobby);
-    
-    // Then broadcast to all other players in the room
-    socket.to(data.lobbyId.toUpperCase()).emit('lobby-updated', gameLobby);
-    
-  } catch (error) {
-    console.error('❌ Error updating room team assignment:', error);
-    socket.emit('error', { message: 'Failed to join team' });
-  }
-});
+ socket.on('lobby:start-game', (data: { lobbyId: string }) => {
 
-socket.on('lobby:start-game', (data: { lobbyId: string }) => {
-  const user = connectedUsers.get(socket.id);
+  console.log('🚀 [DEBUG] lobby:start-game handler started');
+
+  console.log('🚀 [DEBUG] Lobby ID:', data.lobbyId);
+    const user = connectedUsers.get(socket.id);
   if (!user) {
     socket.emit('error', { message: 'Not authenticated' });
     return;
@@ -456,63 +503,101 @@ socket.on('lobby:start-game', (data: { lobbyId: string }) => {
   console.log(`🚀 ${user.username} starting game from room ${data.lobbyId}`);
   
   try {
-    // Import rooms from routes/rooms.ts
     const { gameLobbies } = require('./routes/gameLobbies');
-    
-    // Get the room
     const gameLobby = gameLobbies.get(data.lobbyId.toUpperCase());
     if (!gameLobby) {
-      socket.emit('error', { message: 'Room not found' });
+      socket.emit('error', { message: 'Lobby not found' });
       return;
     }
     
-    // Validate teams before starting
-    const redPlayers = gameLobby.players.filter((p: any) => p.team === 'red');
-    const bluePlayers = gameLobby.players.filter((p: any) => p.team === 'blue');
+    const redTeamValid = gameLobby.redTeam && gameLobby.redTeam.spymaster && gameLobby.redTeam.operatives.length > 0;
+    const blueTeamValid = gameLobby.blueTeam && gameLobby.blueTeam.spymaster && gameLobby.blueTeam.operatives.length > 0;
     
-    if (redPlayers.length === 0 || bluePlayers.length === 0) {
-      socket.emit('error', { message: 'Need players on both teams to start' });
+    if (!redTeamValid && !blueTeamValid) {
+      socket.emit('error', { message: 'Need at least one valid team to start' });
       return;
     }
     
-    // Create game using existing room code as game code
-    const gameCode = data.lobbyId.toUpperCase();
-    const game = gameService.createGameWithCode(gameCode, user.id);
-    
-    // Add all room players to the game
-    gameLobby.players.forEach((player: any) => {
-      if (player.team !== 'neutral') {
-        gameService.addPlayerToGameByCode(gameCode, player.id, player.username, '');
-        // Set their team assignment in the game
-        gameService.assignPlayerToTeam(player.id, player.team as any, player.role as any);
+    try {
+      gameLobby.status = 'in-game';
+            console.log('🚀 [DEBUG] About to create game for room:', data.lobbyId.toUpperCase());
+
+            const game = gameService.createGameForRoom(data.lobbyId.toUpperCase());
+      console.log('🚀 [DEBUG] Game created:', game.getId());
+      
+      // Transfer team structure to game using setTeams method
+      console.log('🔄 [SOCKET] Transferring teams from lobby to game');
+      console.log('🔄 [SOCKET] Lobby red team:', gameLobby.redTeam ? `${gameLobby.redTeam.spymaster?.username} + ${gameLobby.redTeam.operatives.length} operatives` : 'undefined');
+      console.log('🔄 [SOCKET] Lobby blue team:', gameLobby.blueTeam ? `${gameLobby.blueTeam.spymaster?.username} + ${gameLobby.blueTeam.operatives.length} operatives` : 'undefined');
+      
+      game.setTeams(gameLobby.redTeam, gameLobby.blueTeam);
+      
+      console.log('🔄 [SOCKET] Teams transferred, verifying game state...');
+      const verifyState = game.getGame();
+      console.log('🔄 [SOCKET] Game red team:', verifyState.redTeam ? `${verifyState.redTeam.spymaster?.username} + ${verifyState.redTeam.operatives.length} operatives` : 'undefined');
+      console.log('🔄 [SOCKET] Game blue team:', verifyState.blueTeam ? `${verifyState.blueTeam.spymaster?.username} + ${verifyState.blueTeam.operatives.length} operatives` : 'undefined');
+      
+      // Register all players with the game service after team transfer
+      console.log('🔄 [SOCKET] Registering players with game service...');
+      const gameId = game.getId();
+      
+      if (gameLobby.redTeam) {
+        if (gameLobby.redTeam.spymaster) {
+          // Direct registration since player is already in game via setTeams
+          gameService.playerGameMap.set(gameLobby.redTeam.spymaster.id, gameId);
+          console.log(`🔄 [SOCKET] Red spymaster ${gameLobby.redTeam.spymaster.username} (${gameLobby.redTeam.spymaster.id}) registered directly`);
+        }
+        gameLobby.redTeam.operatives.forEach((operative: any) => {
+          // Direct registration since player is already in game via setTeams
+          gameService.playerGameMap.set(operative.id, gameId);
+          console.log(`🔄 [SOCKET] Red operative ${operative.username} (${operative.id}) registered directly`);
+        });
       }
-    });
-    
-    // Start the game
-    const startResult = gameService.startGame(user.id);
-    if (startResult.success) {
-      // Update room status
-      gameLobby.status = 'playing';
-      gameLobby.updatedAt = new Date().toISOString();
       
-      console.log(`✅ Game started successfully for room ${data.lobbyId}`);
+      if (gameLobby.blueTeam) {
+        if (gameLobby.blueTeam.spymaster) {
+          // Direct registration since player is already in game via setTeams
+          gameService.playerGameMap.set(gameLobby.blueTeam.spymaster.id, gameId);
+          console.log(`🔄 [SOCKET] Blue spymaster ${gameLobby.blueTeam.spymaster.username} (${gameLobby.blueTeam.spymaster.id}) registered directly`);
+        }
+        gameLobby.blueTeam.operatives.forEach((operative: any) => {
+          // Direct registration since player is already in game via setTeams
+          gameService.playerGameMap.set(operative.id, gameId);
+          console.log(`🔄 [SOCKET] Blue operative ${operative.username} (${operative.id}) registered directly`);
+        });
+      }
       
-      // Navigate all room members to the game
-      io.to(data.lobbyId.toUpperCase()).emit('game-created', {
-        gameId: gameCode,
-        message: 'Game started! Redirecting to game board...'
-      });
-    } else {
-      socket.emit('error', { message: startResult.error || 'Failed to start game' });
+      console.log('✅ [SOCKET] All players registered with game service');
+            
+      // Now start the game
+      const startResult = gameService.startGame(user.id);
+      if (startResult.success) {
+        io.to(data.lobbyId.toUpperCase()).emit('game-started', {
+          gameId: game.getId(),
+          lobbyId: data.lobbyId.toUpperCase(),
+          gameCode: data.lobbyId.toUpperCase(),
+          message: 'Game started! Redirecting to game...',
+          redirectTo: `/game/${data.lobbyId.toUpperCase()}`
+        });
+        
+        // Also emit game state to all players
+        const finalGameState = game.getGame();
+        io.to(data.lobbyId.toUpperCase()).emit('game:state-updated', finalGameState);
+        
+        console.log('🎉 [SOCKET] Game started successfully and players notified!');
+      } else {
+        socket.emit('error', { message: startResult.error || 'Failed to start game' });
+      }
+    } catch (gameError) {
+      console.error('❌ Error in game creation:', gameError);
+      socket.emit('error', { message: 'Failed to create game instance' });
     }
-    
   } catch (error) {
-    console.error('❌ Error starting game from room:', error);
+    console.error('❌ Error starting game:', error);
     socket.emit('error', { message: 'Failed to start game' });
   }
 });
 
-// Simple room joining for RoomPage
 socket.on('join-lobby', (lobbyCode: string) => {
   const user = connectedUsers.get(socket.id);
   if (!user) {

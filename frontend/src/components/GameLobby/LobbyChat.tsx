@@ -42,7 +42,7 @@ const LobbyChat: React.FC<LobbyChatProps> = ({
         Lobby Chat
       </h3>
       
-      <div className="h-80 overflow-y-auto border border-slate-600/50 rounded-lg p-3 mb-4 bg-slate-700/30 backdrop-blur-sm scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
+      <div className="overflow-y-auto border border-slate-600/50 rounded-lg p-3 mb-4 bg-slate-700/30 backdrop-blur-sm scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-slate-800">
         {messages.length > 0 ? (
           messages.map((message) => (
             <div key={message.id} className="mb-3 p-2 rounded-lg bg-slate-600/20 border border-slate-600/20">

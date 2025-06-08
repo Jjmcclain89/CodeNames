@@ -3,33 +3,34 @@ import React from 'react';
 interface Player {
   id: string;
   username: string;
-  team?: string;
-  role?: string;
   isOnline?: boolean;
+  socketId?: string;
+}
+
+interface Team {
+  spymaster?: Player;
+  operatives: Player[];
 }
 
 interface TeamAssignmentPanelProps {
   team: 'red' | 'blue';
-  players: Player[];
-  hasSpymaster: boolean;
+  teamData?: Team;
   currentUser: any;
   onJoinTeam: (team: string, role: string) => void;
 }
 
 const TeamAssignmentPanel: React.FC<TeamAssignmentPanelProps> = ({
   team,
-  players,
-  hasSpymaster,
+  teamData,
   currentUser,
   onJoinTeam
 }) => {
   const isRed = team === 'red';
   
-  // Find the spymaster for this team
-  const spymaster = players.find(p => p.role === 'spymaster');
-  
-  // Get only operatives for this team
-  const operatives = players.filter(p => p.role === 'operative');
+  // Get team data directly
+  const spymaster = teamData?.spymaster;
+  const operatives = teamData?.operatives || [];
+  const hasSpymaster = !!spymaster;
   
   // Check if current user is already an operative on this team
   const isCurrentUserOperativeOnThisTeam = operatives.some(
@@ -77,7 +78,7 @@ const TeamAssignmentPanel: React.FC<TeamAssignmentPanelProps> = ({
         {config.emoji} {config.name}
       </h3>
       
-      {/* Only Spymaster Button */}
+      {/* Spymaster Section */}
       <div className="mb-4 flex justify-center">
         <button
           onClick={() => onJoinTeam(team, 'spymaster')}
@@ -101,7 +102,7 @@ const TeamAssignmentPanel: React.FC<TeamAssignmentPanelProps> = ({
         </div>
         
         <div className="space-y-2 flex flex-col items-center">
-          {operatives.map((player: any) => (
+          {operatives.map((player: Player) => (
             <div key={player.id} className={`w-48 flex items-center justify-center py-2 px-3 ${config.memberBg} rounded-lg`}>
               <span className="text-sm mr-2">👤</span>
               <span className={config.textColor}>{player.username}</span>
