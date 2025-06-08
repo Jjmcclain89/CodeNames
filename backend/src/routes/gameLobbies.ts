@@ -3,7 +3,7 @@ import express, { Request, Response } from 'express';
 const router = express.Router();
 
 // Define proper TypeScript interfaces
-interface RoomPlayer {
+interface GameLobbyPlayer {
   id: string;
   username: string;
   team: string;
@@ -12,45 +12,45 @@ interface RoomPlayer {
   isOwner: boolean;
 }
 
-interface Room {
+interface GameLobby {
   id: string;
   code: string;
   owner: string;
-  players: RoomPlayer[];
+  players: GameLobbyPlayer[];
   status: string;
   createdAt: string;
   updatedAt: string;
 }
 
-// In-memory storage for rooms (separate from games)
-const rooms = new Map<string, Room>();
+// In-memory storage for game lobbies
+const gameLobbies = new Map<string, GameLobby>();
 
-// Generate room code
-function generateRoomCode(): string {
+// Generate lobby code
+function generateLobbyCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
   for (let i = 0; i < 6; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   
-  if (rooms.has(code)) {
-    return generateRoomCode(); // Try again if exists
+  if (gameLobbies.has(code)) {
+    return generateLobbyCode(); // Try again if exists
   }
   
   return code;
 }
 
-// Create room
+// Create game lobby
 router.post('/create', (req: Request, res: Response): void => {
   try {
-    console.log('🏠 Creating new room...');
+    console.log('🎮 Creating new game lobby...');
     
     const { userId, username } = req.body;
-    const roomCode = generateRoomCode();
+    const lobbyCode = generateLobbyCode();
     
-    const room: Room = {
-      id: roomCode,
-      code: roomCode,
+    const gameLobby: GameLobby = {
+      id: lobbyCode,
+      code: lobbyCode,
       owner: userId || 'anonymous',
       players: [],
       status: 'waiting',
@@ -60,7 +60,7 @@ router.post('/create', (req: Request, res: Response): void => {
     
     // Add creator as first player
     if (username && userId) {
-      room.players.push({
+      gameLobby.players.push({
         id: userId,
         username,
         team: 'neutral',
@@ -70,56 +70,56 @@ router.post('/create', (req: Request, res: Response): void => {
       });
     }
     
-    rooms.set(roomCode, room);
+    gameLobbies.set(lobbyCode, gameLobby);
     
-    console.log(`✅ Created room: ${roomCode}`);
+    console.log(`✅ Created game lobby: ${lobbyCode}`);
     
     res.json({ 
       success: true, 
-      roomCode: roomCode,
-      message: 'Room created successfully!',
+      lobbyCode: lobbyCode,
+      message: 'Game lobby created successfully!',
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('❌ Error creating room:', error);
+    console.error('❌ Error creating game lobby:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to create room',
+      error: 'Failed to create game lobby',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-// Join room
+// Join game lobby
 router.post('/join', (req: Request, res: Response): void => {
   try {
-    const { roomCode, userId, username } = req.body;
-    console.log(`🚪 User ${username} joining room: ${roomCode}`);
+    const { lobbyCode, userId, username } = req.body;
+    console.log(`🚪 User ${username} joining game lobby: ${lobbyCode}`);
     
-    if (!roomCode) {
+    if (!lobbyCode) {
       res.status(400).json({ 
         success: false,
-        error: 'Room code is required' 
+        error: 'Lobby code is required' 
       });
       return;
     }
     
-    const room = rooms.get(roomCode.toUpperCase());
+    const gameLobby = gameLobbies.get(lobbyCode.toUpperCase());
     
-    if (!room) {
+    if (!gameLobby) {
       res.status(404).json({ 
         success: false,
-        error: 'Room not found' 
+        error: 'Game lobby not found' 
       });
       return;
     }
     
-    // Add player to room if not already there
+    // Add player to lobby if not already there
     if (username && userId) {
-      const existingPlayer = room.players.find((p: RoomPlayer) => p.id === userId);
+      const existingPlayer = gameLobby.players.find((p: GameLobbyPlayer) => p.id === userId);
       if (!existingPlayer) {
-        room.players.push({
+        gameLobby.players.push({
           id: userId,
           username,
           team: 'neutral',
@@ -127,103 +127,103 @@ router.post('/join', (req: Request, res: Response): void => {
           isOnline: true,
           isOwner: false
         });
-        room.updatedAt = new Date().toISOString();
-        console.log(`✅ Added ${username} to room ${roomCode}`);
+        gameLobby.updatedAt = new Date().toISOString();
+        console.log(`✅ Added ${username} to game lobby ${lobbyCode}`);
       }
     }
     
     res.json({ 
       success: true, 
-      roomCode: roomCode.toUpperCase(),
-      message: 'Joined room successfully!',
+      lobbyCode: lobbyCode.toUpperCase(),
+      message: 'Joined game lobby successfully!',
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('❌ Error joining room:', error);
+    console.error('❌ Error joining game lobby:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to join room',
+      error: 'Failed to join game lobby',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-// Get room info
-router.get('/:roomCode', (req: Request, res: Response): void => {
+// Get game lobby info
+router.get('/:lobbyCode', (req: Request, res: Response): void => {
   try {
-    const { roomCode } = req.params;
-    console.log(`🔍 Getting room info: ${roomCode}`);
+    const { lobbyCode } = req.params;
+    console.log(`🔍 Getting game lobby info: ${lobbyCode}`);
     
-    if (!roomCode) {
+    if (!lobbyCode) {
       res.status(400).json({ 
         success: false,
-        error: 'Room code is required' 
+        error: 'Lobby code is required' 
       });
       return;
     }
     
-    const room = rooms.get(roomCode.toUpperCase());
+    const gameLobby = gameLobbies.get(lobbyCode.toUpperCase());
     
-    if (room) {
+    if (gameLobby) {
       res.json({ 
         success: true, 
-        room: room,
+        gameLobby: gameLobby,
         timestamp: new Date().toISOString()
       });
     } else {
       res.status(404).json({ 
         success: false,
-        error: 'Room not found' 
+        error: 'Game lobby not found' 
       });
     }
     
   } catch (error) {
-    console.error('❌ Error getting room info:', error);
+    console.error('❌ Error getting game lobby info:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Failed to get room info',
+      error: 'Failed to get game lobby info',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
-// List all rooms
+// List all game lobbies
 router.get('/', (req: Request, res: Response): void => {
   try {
-    console.log('📋 Listing all rooms...');
+    console.log('📋 Listing all game lobbies...');
     
-    const activeRooms = Array.from(rooms.values()).map(room => ({
-      code: room.code,
-      id: room.id,
-      status: room.status,
-      playerCount: room.players.length,
-      players: room.players.map((p: RoomPlayer) => p.username),
-      createdAt: room.createdAt,
-      lastActivity: room.updatedAt
+    const activeGameLobbies = Array.from(gameLobbies.values()).map(lobby => ({
+      code: lobby.code,
+      id: lobby.id,
+      status: lobby.status,
+      playerCount: lobby.players.length,
+      players: lobby.players.map((p: GameLobbyPlayer) => p.username),
+      createdAt: lobby.createdAt,
+      lastActivity: lobby.updatedAt
     }));
     
     // Sort by most recent activity
-    activeRooms.sort((a, b) => 
+    activeGameLobbies.sort((a, b) => 
       new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
     );
     
     res.json({
       success: true,
-      rooms: activeRooms,
-      total: rooms.size,
+      gameLobbies: activeGameLobbies,
+      total: gameLobbies.size,
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('❌ Error listing rooms:', error);
+    console.error('❌ Error listing game lobbies:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to list rooms',
+      error: 'Failed to list game lobbies',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
 
 export default router;
-export { rooms, Room, RoomPlayer };
+export { gameLobbies, GameLobby, GameLobbyPlayer };

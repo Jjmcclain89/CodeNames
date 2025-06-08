@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { socketService } from '../services/socketService';
-import { ChatRoom, TeamSetup } from '../components/Room';
+import { LobbyChat, TeamSetup } from '../components/GameLobby';
 
 interface Player {
   id: string;
@@ -11,7 +11,7 @@ interface Player {
   isOnline?: boolean;
 }
 
-interface RoomMessage {
+interface GameLobbyMessage {
   id: string;
   username: string;
   userId: string;
@@ -19,40 +19,40 @@ interface RoomMessage {
   timestamp: string;
 }
 
-const RoomPage: React.FC = () => {
-  const { roomId } = useParams<{ roomId: string }>();
+const GameLobbyPage: React.FC = () => {
+  const { lobbyId } = useParams<{ lobbyId: string }>();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [roomState, setRoomState] = useState<any>(null);
+  const [lobbyState, setLobbyState] = useState<any>(null);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [messages, setMessages] = useState<RoomMessage[]>([]);
+  const [messages, setMessages] = useState<GameLobbyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!lobbyId) return;
     
     const user = JSON.parse(localStorage.getItem('user') || '{}');
     setCurrentUser(user);
-    loadRoomAndConnect();
+    loadLobbyAndConnect();
     
     return () => {
       if (socketService.socket) {
-        socketService.socket.off('player-joined-room');
-        socketService.socket.off('player-left-room');
-        socketService.socket.off('new-room-message');
-        socketService.socket.off('room-updated');
+        socketService.socket.off('player-joined-lobby');
+        socketService.socket.off('player-left-lobby');
+        socketService.socket.off('new-lobby-message');
+        socketService.socket.off('lobby-updated');
         socketService.socket.off('game-created');
       }
     };
-  }, [roomId]);
+  }, [lobbyId]);
 
-  const loadRoomAndConnect = async () => {
-    if (!roomId) {
-      setError('No room ID provided');
+  const loadLobbyAndConnect = async () => {
+    if (!lobbyId) {
+      setError('No lobby ID provided');
       setIsLoading(false);
       return;
     }
@@ -67,33 +67,33 @@ const RoomPage: React.FC = () => {
         return;
       }
 
-      // Load room info
-      const roomResponse = await fetch(`/api/rooms/${roomId.toUpperCase()}`);
+      // Load lobby info
+      const lobbyResponse = await fetch(`/api/gamelobbies/${lobbyId.toUpperCase()}`);
       
-      if (roomResponse.ok) {
-        const roomData = await roomResponse.json();
-        if (roomData.success) {
-          setRoomState(roomData.room);
-          setPlayers(roomData.room.players || []);
+      if (lobbyResponse.ok) {
+        const lobbyData = await lobbyResponse.json();
+        if (lobbyData.success) {
+          setLobbyState(lobbyData.gameLobby);
+          setPlayers(lobbyData.gameLobby.players || []);
         }
-      } else if (roomResponse.status === 404) {
-        setError('Room not found - the room code may be invalid or expired');
+      } else if (lobbyResponse.status === 404) {
+        setError('Game lobby not found - the lobby code may be invalid or expired');
         setIsLoading(false);
         return;
       }
 
-      // Connect to socket and join room
-      await connectToRoom(roomId, token, user);
+      // Connect to socket and join lobby
+      await connectToLobby(lobbyId, token, user);
       setIsLoading(false);
       
     } catch (err: any) {
-      console.error('❌ Error loading room:', err);
-      setError(err.message || 'Unable to connect to room');
+      console.error('❌ Error loading game lobby:', err);
+      setError(err.message || 'Unable to connect to game lobby');
       setIsLoading(false);
     }
   };
 
-  const connectToRoom = async (roomId: string, token: string, user: any) => {
+  const connectToLobby = async (lobbyId: string, token: string, user: any) => {
     if (isConnected && socketService.socket?.connected) {
       return Promise.resolve();
     }
@@ -105,9 +105,9 @@ const RoomPage: React.FC = () => {
       }
 
       const handleAuth = () => {
-        socketService.socket?.emit('join-room', roomId);
+        socketService.socket?.emit('join-lobby', lobbyId);
         setIsConnected(true);
-        setupRoomListeners();
+        setupLobbyListeners();
         resolve();
       };
 
@@ -123,37 +123,37 @@ const RoomPage: React.FC = () => {
     });
   };
 
-  const setupRoomListeners = () => {
+  const setupLobbyListeners = () => {
     if (!socketService.socket) return;
 
     // Player events
-    socketService.socket.on('player-joined-room', (data: any) => {
-      console.log('👥 Player joined room:', data);
+    socketService.socket.on('player-joined-lobby', (data: any) => {
+      console.log('👥 Player joined lobby:', data);
       setPlayers(prev => [...prev.filter(p => p.id !== data.player.id), data.player]);
     });
 
-    socketService.socket.on('player-left-room', (data: any) => {
-      console.log('👥 Player left room:', data);
+    socketService.socket.on('player-left-lobby', (data: any) => {
+      console.log('👥 Player left lobby:', data);
       setPlayers(prev => prev.filter(p => p.id !== data.player.id));
     });
 
-    // Room updates
-    socketService.socket.on('room-updated', (roomData: any) => {
-      console.log('🏠 Room updated:', roomData);
-      console.log('🏠 Updated room players:', roomData.players?.length || 0);
-      setRoomState(roomData);
-      setPlayers(roomData.players || []);
+    // Lobby updates
+    socketService.socket.on('lobby-updated', (lobbyData: any) => {
+      console.log('🎮 Lobby updated:', lobbyData);
+      console.log('🎮 Updated lobby players:', lobbyData.players?.length || 0);
+      setLobbyState(lobbyData);
+      setPlayers(lobbyData.players || []);
       
       // Log team assignments for debugging
-      if (roomData.players) {
-        roomData.players.forEach((p: any, i: number) => {
+      if (lobbyData.players) {
+        lobbyData.players.forEach((p: any, i: number) => {
           console.log(`  ${i+1}. ${p.username} - ${p.team}/${p.role}`);
         });
       }
     });
 
     // Chat
-    socketService.socket.on('new-room-message', (message: RoomMessage) => {
+    socketService.socket.on('new-lobby-message', (message: GameLobbyMessage) => {
       setMessages(prev => [...prev, message]);
     });
 
@@ -170,8 +170,8 @@ const RoomPage: React.FC = () => {
       return;
     }
 
-    socketService.socket?.emit('room:join-team', {
-      roomId: roomId?.toUpperCase(),
+    socketService.socket?.emit('lobby:join-team', {
+      lobbyId: lobbyId?.toUpperCase(),
       team,
       role
     });
@@ -193,8 +193,8 @@ const RoomPage: React.FC = () => {
       }
 
       // Emit start game event - backend will create game and navigate all players
-      socketService.socket?.emit('room:start-game', {
-        roomId: roomId?.toUpperCase()
+      socketService.socket?.emit('lobby:start-game', {
+        lobbyId: lobbyId?.toUpperCase()
       });
 
     } catch (err: any) {
@@ -215,10 +215,10 @@ const RoomPage: React.FC = () => {
   };
 
   const sendMessage = () => {
-    if (!newMessage.trim() || !isConnected || !roomId) return;
+    if (!newMessage.trim() || !isConnected || !lobbyId) return;
 
-    socketService.socket?.emit('send-room-message', {
-      roomId: roomId.toUpperCase(),
+    socketService.socket?.emit('send-lobby-message', {
+      lobbyId: lobbyId.toUpperCase(),
       message: newMessage.trim()
     });
 
@@ -237,8 +237,8 @@ const RoomPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
-          <div className="text-2xl font-bold text-gray-900 mb-4">🏠 Loading Room...</div>
-          <div className="text-gray-600 mb-6">Room: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{roomId}</span></div>
+          <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Loading Game Lobby...</div>
+          <div className="text-gray-600 mb-6">Lobby: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{lobbyId}</span></div>
           <div className="flex justify-center">
             <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
           </div>
@@ -252,9 +252,9 @@ const RoomPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
-          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Room Error</div>
+          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Lobby Error</div>
           <div className="text-gray-600 mb-6">
-            <p>Room: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{roomId}</span></p>
+            <p>Lobby: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{lobbyId}</span></p>
             <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
           </div>
           <div className="space-y-3">
@@ -299,10 +299,10 @@ const RoomPage: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Room Setup Area */}
+          {/* Main Lobby Setup Area */}
           <div className="lg:col-span-2 space-y-6">
             <TeamSetup
-              roomId={roomId || ''}
+              lobbyId={lobbyId || ''}
               players={players}
               currentUser={currentUser}
               isConnected={isConnected}
@@ -315,7 +315,7 @@ const RoomPage: React.FC = () => {
 
           {/* Sidebar - Chat and Players */}
           <div>
-            <ChatRoom
+            <LobbyChat
               players={players}
               messages={messages}
               newMessage={newMessage}
@@ -331,7 +331,7 @@ const RoomPage: React.FC = () => {
         <div className="mt-6 bg-blue-50 border border-blue-200 p-4 rounded-lg">
           <h3 className="font-semibold text-blue-900 mb-2">📱 Invite Friends</h3>
           <div className="text-blue-800">
-            <p>Share this room code with friends: <span className="bg-blue-100 px-2 py-1 rounded font-mono font-bold">{roomId}</span></p>
+            <p>Share this lobby code with friends: <span className="bg-blue-100 px-2 py-1 rounded font-mono font-bold">{lobbyId}</span></p>
             <p className="text-sm mt-1">They can join by entering this code on the homepage!</p>
           </div>
         </div>
@@ -340,4 +340,4 @@ const RoomPage: React.FC = () => {
   );
 };
 
-export default RoomPage;
+export default GameLobbyPage;

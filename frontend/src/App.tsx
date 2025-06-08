@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
-import RoomPage from './pages/RoomPage';
+import GameLobbyPage from './pages/GameLobbyPage';
 import GamePage from './pages/GamePage';
 import DebugPage from './pages/DebugPage';
 import GameDebugPage from './pages/GameDebugPage';
@@ -104,12 +104,12 @@ function App() {
               }
             />
             
-            {/* Room Route - Team assignment and game setup */}
+            {/* Game Lobby Route - Team assignment and game setup */}
             <Route
-              path="/room/:roomId"
+              path="/lobby/:lobbyId"
               element={
                 isAuthenticated ? (
-                  <RoomPage />
+                  <GameLobbyPage />
                 ) : (
                   <Navigate to="/login" replace />
                 )

@@ -1,7 +1,7 @@
 import React from 'react';
 import { socketService } from '../services/socketService';
 import ChatRoom from '../components/Chat/ChatRoom';
-import GameLobby from '../components/GameLobby';
+import GamesList from '../components/GamesList';
 
 const HomePage: React.FC = () => {
   return (
@@ -19,12 +19,12 @@ const HomePage: React.FC = () => {
             Welcome to Codenames Online!
           </h1>
           <p className="text-l text-slate-300 max-w-2xl mx-auto">
-            Play Codenames with your friends online! Create a game or join an existing one to start your spy mission.
+            Play Codenames with your friends online! Create a game lobby or join an existing one to start your spy mission.
           </p>
         </div>
         
-        {/* Game Lobby Component */}
-        <GameLobby className="mb-8" />
+        {/* Games List Component */}
+        <GamesList className="mb-8" />
       </div>
     </div>
   );

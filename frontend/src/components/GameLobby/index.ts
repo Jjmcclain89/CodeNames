@@ -1,2 +1,2 @@
-export { default } from './GameLobby';
-export { default as GameLobby } from './GameLobby';
+export { default as LobbyChat } from './LobbyChat';
+export { default as TeamSetup } from './TeamSetup';

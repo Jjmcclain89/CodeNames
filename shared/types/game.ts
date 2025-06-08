@@ -52,6 +52,35 @@ export interface GameConfig {
   assassinCards: number; // 1
 }
 
+
+// Game Lobby Types (team assignment phase)
+export interface GameLobbyMessage {
+  id: string;
+  username: string;
+  userId: string;
+  text: string;
+  timestamp: string;
+}
+
+export interface GameLobbyPlayer {
+  id: string;
+  username: string;
+  team: TeamColor;
+  role: PlayerRole;
+  isOnline: boolean;
+  isOwner: boolean;
+}
+
+export interface GameLobby {
+  id: string;
+  code: string;
+  owner: string;
+  players: GameLobbyPlayer[];
+  status: 'waiting' | 'playing' | 'finished';
+  createdAt: string;
+  updatedAt: string;
+}
+
 // Socket Events for Game (extends existing socket events)
 export interface GameSocketEvents {
   // Game Management

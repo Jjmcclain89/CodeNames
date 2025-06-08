@@ -9,7 +9,7 @@ interface Player {
 }
 
 interface TeamSetupProps {
-  roomId: string;
+  lobbyId: string;
   players: Player[];
   currentUser: any;
   isConnected: boolean;
@@ -20,7 +20,7 @@ interface TeamSetupProps {
 }
 
 const TeamSetup: React.FC<TeamSetupProps> = ({
-  roomId,
+  lobbyId,
   players,
   currentUser,
   isConnected,
@@ -46,7 +46,7 @@ const TeamSetup: React.FC<TeamSetupProps> = ({
   return (
     <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
       <h1 className="text-3xl font-bold text-gray-900 mb-6">
-        🏠 Room: {roomId}
+        🎮 Game Lobby: {lobbyId}
       </h1>
       
       {/* Team Assignment Section */}

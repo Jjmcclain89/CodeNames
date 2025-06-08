@@ -8,7 +8,7 @@ interface Player {
   isOnline?: boolean;
 }
 
-interface RoomMessage {
+interface GameLobbyMessage {
   id: string;
   username: string;
   userId: string;
@@ -16,9 +16,9 @@ interface RoomMessage {
   timestamp: string;
 }
 
-interface ChatRoomProps {
+interface LobbyChatProps {
   players: Player[];
-  messages: RoomMessage[];
+  messages: GameLobbyMessage[];
   newMessage: string;
   setNewMessage: (message: string) => void;
   isConnected: boolean;
@@ -26,7 +26,7 @@ interface ChatRoomProps {
   onKeyPress: (e: React.KeyboardEvent) => void;
 }
 
-const ChatRoom: React.FC<ChatRoomProps> = ({
+const LobbyChat: React.FC<LobbyChatProps> = ({
   players,
   messages,
   newMessage,
@@ -67,9 +67,9 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
       </div>
 
-      {/* Room Chat */}
+      {/* Lobby Chat */}
       <div className="bg-white rounded-lg shadow border border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-900 mb-4">💬 Room Chat</h3>
+        <h3 className="font-semibold text-gray-900 mb-4">💬 Lobby Chat</h3>
         
         <div className="h-64 overflow-y-auto border border-gray-200 rounded p-2 mb-4 bg-gray-50">
           {messages.length > 0 ? (
@@ -112,4 +112,4 @@ const ChatRoom: React.FC<ChatRoomProps> = ({
   );
 };
 
-export default ChatRoom;
+export default LobbyChat;
