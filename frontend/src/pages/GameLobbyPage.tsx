@@ -10,10 +10,6 @@ interface Player {
   socketId: string;
 }
 
-
-
-
-
 interface GameLobbyMessage {
   id: string;
   username: string;
@@ -193,7 +189,45 @@ const GameLobbyPage: React.FC = () => {
     });
   };
 
+  
+  const handleSimpleTest = () => {
+    console.log('🧪 Frontend: Sending SIMPLE_TEST event');
+    socketService.socket?.emit('SIMPLE_TEST', {});
+    
+    setTimeout(() => {
+      console.log('🧪 Frontend: Sending lobby:leave-team event');
+      socketService.socket?.emit('lobby:leave-team', {
+        lobbyId: lobbyId?.toUpperCase(),
+        team: 'red',
+        role: 'operative'
+      });
+    }, 1000);
+  };
+
+  const handleLeaveTeam = (team: string, role: string) => {
+    console.log(`🚪 Leaving ${team} team as ${role}`);
+    
+    if (!isConnected) {
+      setError('Not connected to server');
+      return;
+    }
+
+    socketService.socket?.emit('lobby:leave-team', {
+      lobbyId: lobbyId?.toUpperCase(),
+      team,
+      role
+    });
+    
+    console.log(`📤 Sent leave team event for ${team}/${role}`);
+  };
+
   const handleStartGame = async () => {
+    // Check ownership first
+    if (!isLobbyOwner()) {
+      setError('Only the lobby owner can start the game');
+      return;
+    }
+
     if (!canStartGame()) {
       setError('Need at least one valid team (spymaster + operatives) and no invalid teams');
       return;
@@ -248,6 +282,23 @@ const GameLobbyPage: React.FC = () => {
     const hasInvalidTeam = redTeamInvalid || blueTeamInvalid;
     
     return hasValidTeam && !hasInvalidTeam;
+  };
+  const isLobbyOwner = () => {
+    if (!currentUser || !lobbyState) return false;
+    return currentUser.id === lobbyState.owner;
+  };
+
+  const getOwnerUsername = () => {
+    if (!lobbyState) return 'Owner';
+    
+    // Try to find owner username from current players in the lobby
+    const allPlayers = [
+      ...(lobbyState.redTeam ? [lobbyState.redTeam.spymaster, ...lobbyState.redTeam.operatives] : []),
+      ...(lobbyState.blueTeam ? [lobbyState.blueTeam.spymaster, ...lobbyState.blueTeam.operatives] : [])
+    ].filter(Boolean);
+    
+    const owner = allPlayers.find(player => player && player.id === lobbyState.owner);
+    return owner ? owner.username : 'Owner';
   };
 
   const sendMessage = () => {
@@ -358,6 +409,19 @@ const GameLobbyPage: React.FC = () => {
         </div>
 
         {/* Error Display */}
+        {/* 🧪 SIMPLE CONNECTION TEST */}
+        <div className="mb-6 p-4 bg-green-900/30 border border-green-500/50 rounded-lg backdrop-blur-sm">
+          <button
+            onClick={handleSimpleTest}
+            className="px-4 py-2 bg-green-700/50 hover:bg-green-600/60 text-white rounded border border-green-500/50"
+          >
+            🧪 Test Socket Connection
+          </button>
+          <p className="text-green-200 text-sm mt-2">
+            Check browser console and backend console for test messages
+          </p>
+        </div>
+
         {error && (
           <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg backdrop-blur-sm">
             <p className="text-red-200">{error}</p>
@@ -373,9 +437,12 @@ const GameLobbyPage: React.FC = () => {
               currentUser={currentUser}
               isConnected={isConnected}
               isCreating={isCreating}
+              isLobbyOwner={isLobbyOwner()}
               onJoinTeam={handleJoinTeam}
+              onLeaveTeam={handleLeaveTeam}
               onStartGame={handleStartGame}
               canStartGame={canStartGame}
+              ownerUsername={getOwnerUsername()}
             />
           </div>
 
