@@ -222,7 +222,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
       {/* Centered Layout Container */}
       <div className="min-h-screen flex justify-center p-4">
-        <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
+        <div className="flex flex-col items-center space-y-4 w-full sm:max-w-4xl">
           
           {/* General Info Display */}
           <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
@@ -304,7 +304,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           </div>
 
           {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
-          <div className={`relative bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
+          <div className={`relative bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-2 sm:p-4 md:p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
             {/* Board Game Texture with Turn Indicator */}
             <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
             <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
@@ -315,7 +315,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 : 'bg-gradient-to-br from-blue-500/10 via-transparent to-blue-500/5'
             }`}></div>
             <div className="relative z-10">
-              <div className="grid grid-cols-5 gap-3">
+              <div className="grid grid-cols-5 gap-1 sm:gap-3">
                 {gameState.board && Array.isArray(gameState.board) ? gameState.board
                   .sort((a, b) => a.position - b.position)
                   .map((card) => (

@@ -86,7 +86,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={`
-        relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 p-2 sm:p-3 border-2 rounded-xl flex items-center justify-center
+        relative w-full h-[18vw] sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 p-2 sm:p-3 border-2 rounded-xl flex items-center justify-center
         transition-all duration-300 font-semibold text-center cursor-pointer
         ${colors}
         ${clickable ? 'transform hover:scale-105 hover:shadow-xl hover:-translate-y-1 active:scale-95' : 'cursor-default'}
@@ -141,12 +141,6 @@ export const Card: React.FC<CardProps> = ({
         <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90 shadow-sm" />
       )}
 
-      {/* Enhanced spymaster team indicator */}
-      {isSpymaster && !card.isRevealed && !showSubmit && (
-        <div className="absolute bottom-1 left-1 text-sm bg-gradient-to-br from-slate-600/90 to-slate-700/90 rounded-full p-1 shadow-lg border border-slate-400/50 backdrop-blur-sm">
-          {getTeamEmoji(card.team)}
-        </div>
-      )}
     </div>
   );
 };
