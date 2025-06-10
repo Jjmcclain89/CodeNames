@@ -206,4 +206,58 @@ router.post('/join', (req: Request, res: Response): void => {
   }
 });
 
+
+
+
+
+
+// 🔐 Check if user has access to a specific game
+router.get('/:gameId/access', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { gameId } = req.params;
+    
+    if (!gameId) {
+      res.status(400).json({
+        success: false,
+        error: 'Game ID is required'
+      });
+      return;
+    }
+    
+    console.log('🔐 [API] Checking access for game:', gameId.toUpperCase());
+    
+    // Check if game exists first
+    const game = gameService.getGameByCode(gameId.toUpperCase());
+    
+    if (!game) {
+      console.log('❌ [API] Game not found:', gameId.toUpperCase());
+      res.status(404).json({
+        success: false,
+        error: 'Game not found',
+        code: 'GAME_NOT_FOUND'
+      });
+      return;
+    }
+    
+    // For now, if the game exists, allow access
+    // The real authorization checking happens at the socket level
+    console.log('✅ [API] Game exists, allowing access');
+    
+    res.json({
+      success: true,
+      authorized: true,
+      game: game.getGame(),
+      message: 'Game access granted'
+    });
+    
+  } catch (error) {
+    console.error('❌ [API] Error checking game access:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check game access',
+      code: 'SERVER_ERROR'
+    });
+  }
+});
+
 export default router;

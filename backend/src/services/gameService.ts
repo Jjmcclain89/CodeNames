@@ -11,6 +11,9 @@ export class GameService {
   private games: Map<string, GameWithMeta> = new Map();
   public playerGameMap: Map<string, string> = new Map(); // playerId -> gameId
   private gameCodes: Map<string, string> = new Map(); // gameCode -> gameId mapping
+  // 🔐 NEW: Persistent user-game authorization tracking
+  private userGameAuth: Map<string, Set<string>> = new Map(); // userId -> Set<gameId>
+  private gameUserAuth: Map<string, Set<string>> = new Map(); // gameId -> Set<userId>
 
   // Game code management methods
   generateGameCode(): string {
@@ -38,6 +41,15 @@ export class GameService {
       lastActivity: new Date()
     });
     
+    // 🔧 FIX: Map the game code to the game ID for lookup
+    this.gameCodes.set(gameCode, gameModel.getId());
+    console.log(`🔧 [GAMESERVICE] Mapped code ${gameCode} to game ID ${gameModel.getId()}`);
+
+    console.log(`🔍 [GAMESERVICE] Created game: ID=${gameModel.getId()}, Code=${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Games map now has ${this.games.size} games`);
+
+    console.log(`🎮 [GAMESERVICE] Created game ${gameModel.getId()} for room ${gameCode}`);
+    
     // Map the game code to the game ID
     this.gameCodes.set(gameCode, gameModel.getId());
     
@@ -46,7 +58,19 @@ export class GameService {
   }
 
   getGameByCode(gameCode: string): CodenamesGameModel | null {
+    console.log(`🔍 [GAMESERVICE] Looking for game with code: ${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Current games map size: ${this.games.size}`);
+    console.log(`🔍 [GAMESERVICE] Current gameCodes map size: ${this.gameCodes?.size || 0}`);
+    console.log(`🔍 [GAMESERVICE] GameCodes map contents:`, Array.from(this.gameCodes.entries()));
+        console.log(`🔍 [GAMESERVICE] getGameByCode called with: ${gameCode}`);
+    // 🔧 Ensure gameCodes map exists
+    if (!this.gameCodes) {
+      console.log('🔧 [GAMESERVICE] GameCodes map not initialized, creating...');
+      this.gameCodes = new Map();
+    }
+    
     const gameId = this.gameCodes.get(gameCode);
+    console.log(`🔍 [GAMESERVICE] GameCode lookup: ${gameCode} -> ${gameId || 'NOT FOUND'}`);
     if (!gameId) return null;
     
     const gameWithMeta = this.games.get(gameId);
@@ -72,12 +96,83 @@ export class GameService {
   }
 
   removeGameByCode(gameCode: string): boolean {
+    // 🔧 Ensure gameCodes map exists
+    if (!this.gameCodes) {
+      console.log('🔧 [GAMESERVICE] GameCodes map not initialized, creating...');
+      this.gameCodes = new Map();
+    }
+    
     const gameId = this.gameCodes.get(gameCode);
+    console.log(`🔍 [GAMESERVICE] GameCode lookup: ${gameCode} -> ${gameId || 'NOT FOUND'}`);
     if (gameId) {
       this.gameCodes.delete(gameCode);
       return this.deleteGame(gameId);
     }
     return false;
+  }
+
+
+  // 🔐 User-Game Authorization Methods
+  authorizeUserForGame(userId: string, gameId: string): void {
+    console.log(`🔐 Authorizing user ${userId} for game ${gameId}`);
+    
+    // Add user to game's authorized users
+    if (!this.gameUserAuth.has(gameId)) {
+      this.gameUserAuth.set(gameId, new Set());
+    }
+    this.gameUserAuth.get(gameId)!.add(userId);
+    
+    // Add game to user's authorized games
+    if (!this.userGameAuth.has(userId)) {
+      this.userGameAuth.set(userId, new Set());
+    }
+    this.userGameAuth.get(userId)!.add(gameId);
+    
+    console.log(`✅ User ${userId} now authorized for game ${gameId}`);
+  }
+
+  isUserAuthorizedForGame(userId: string, gameId: string): boolean {
+    const authorized = this.gameUserAuth.get(gameId)?.has(userId) || false;
+    console.log(`🔍 Checking authorization: User ${userId} for game ${gameId} = ${authorized}`);
+    return authorized;
+  }
+
+  getUserAuthorizedGames(userId: string): string[] {
+    const games = Array.from(this.userGameAuth.get(userId) || []);
+    console.log(`🔍 User ${userId} authorized for games:`, games);
+    return games;
+  }
+
+  removeUserGameAuthorization(userId: string, gameId: string): void {
+    console.log(`🔐 Removing authorization: User ${userId} from game ${gameId}`);
+    
+    this.gameUserAuth.get(gameId)?.delete(userId);
+    this.userGameAuth.get(userId)?.delete(gameId);
+    
+    // Clean up empty sets
+    if (this.gameUserAuth.get(gameId)?.size === 0) {
+      this.gameUserAuth.delete(gameId);
+    }
+    if (this.userGameAuth.get(userId)?.size === 0) {
+      this.userGameAuth.delete(userId);
+    }
+  }
+
+  // Get user's current active game (for auto-rejoin)
+  getUserCurrentGame(userId: string): CodenamesGameModel | null {
+    const authorizedGames = this.getUserAuthorizedGames(userId);
+    
+    // Find the most recent active game
+    for (const gameId of authorizedGames) {
+      const game = this.getGame(gameId);
+      if (game && game.getStatus() !== 'finished') {
+        console.log(`🎮 Found active game for user ${userId}: ${gameId}`);
+        return game;
+      }
+    }
+    
+    console.log(`🔍 No active game found for user ${userId}`);
+    return null;
   }
 
   // Existing game lifecycle methods
@@ -90,11 +185,21 @@ export class GameService {
     }
 
     console.log(`🎮 Creating new game for room: ${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] createGameForRoom called with: ${gameCode}`);
     const gameModel = new CodenamesGameModel(gameCode);
     this.games.set(gameModel.getId(), {
       model: gameModel,
       lastActivity: new Date()
     });
+    
+    // 🔧 FIX: Map the game code to the game ID for lookup
+    this.gameCodes.set(gameCode, gameModel.getId());
+    console.log(`🔧 [GAMESERVICE] Mapped code ${gameCode} to game ID ${gameModel.getId()}`);
+
+    console.log(`🔍 [GAMESERVICE] Created game: ID=${gameModel.getId()}, Code=${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Games map now has ${this.games.size} games`);
+
+    console.log(`🎮 [GAMESERVICE] Created game ${gameModel.getId()} for room ${gameCode}`);
 
     return gameModel;
   }
@@ -109,6 +214,15 @@ export class GameService {
       model: gameModel,
       lastActivity: new Date()
     });
+    
+    // 🔧 FIX: Map the game code to the game ID for lookup
+    this.gameCodes.set(gameCode, gameModel.getId());
+    console.log(`🔧 [GAMESERVICE] Mapped code ${gameCode} to game ID ${gameModel.getId()}`);
+
+    console.log(`🔍 [GAMESERVICE] Created game: ID=${gameModel.getId()}, Code=${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Games map now has ${this.games.size} games`);
+
+    console.log(`🎮 [GAMESERVICE] Created game ${gameModel.getId()} for room ${gameCode}`);
 
     return gameModel;
   }
@@ -158,6 +272,12 @@ export class GameService {
         }
       }
       
+      // 🔐 Clean up user authorizations for this game
+      const authorizedUsers = this.gameUserAuth.get(gameId) || new Set();
+      for (const userId of authorizedUsers) {
+        this.removeUserGameAuthorization(userId, gameId);
+      }
+      
       this.games.delete(gameId);
       return true;
     }
@@ -199,6 +319,8 @@ export class GameService {
     const success = game.addPlayer(playerId, username, socketId);
     if (success) {
       this.playerGameMap.set(playerId, gameId);
+      // 🔐 Authorize user for this game
+      this.authorizeUserForGame(playerId, gameId);
       console.log(`✅ [ADDPLAYER] Successfully added ${username} to game ${gameId}`);
     } else {
       console.log(`❌ [ADDPLAYER] Failed to add ${username} to game ${gameId}`);
@@ -213,6 +335,8 @@ export class GameService {
       const success = game.removePlayer(playerId);
       if (success) {
         this.playerGameMap.delete(playerId);
+        // Note: Keep game authorization for potential reconnection
+        // this.removeUserGameAuthorization(playerId, gameState.id);
         
         // Don't immediately delete empty games - they might be rejoined
         const gameState = game.getGame();

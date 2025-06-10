@@ -12,7 +12,7 @@ interface AuthenticatedSocket extends Socket {
 // Get access to users map from index.ts
 let externalUsersMap: Map<string, any> | null = null;
 
-// Variables needed for socket handlers (local fallbacks)
+// Variables needed for socket handlers
 const users = new Map<string, any>();
 const rooms = new Map<string, any>();
 const connectedUsers = new Map<string, any>();
@@ -30,7 +30,6 @@ function findUserByToken(token: string) {
         return null;
     }
 
-    // Use the shared users map from index.ts
     if (externalUsersMap) {
         for (const [userId, userData] of externalUsersMap.entries()) {
             if (userData.token === token) {
@@ -60,24 +59,15 @@ function getOrCreateGlobalRoom() {
 }
 
 export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, prisma: PrismaClient) => {
-    console.log('📡 Socket connected via socketHandlers.ts:', socket.id);
+    console.log('📡 Socket connected:', socket.id);
 
     // Authentication handler
     socket.on('authenticate', (token: string) => {
-        console.log('🔐 AUTHENTICATION REQUEST via socketHandlers.ts');
-        console.log('🔐 Socket ID:', socket.id);
-        console.log('🔐 Token received:', token ? token.substring(0, 20) + '...' : 'null');
-        console.log('🔐 External users map available:', !!externalUsersMap);
-        console.log('🔐 External users map size:', externalUsersMap ? externalUsersMap.size : 'N/A');
+        console.log('🔐 Authentication request from socket:', socket.id);
         
         const user = findUserByToken(token);
-        console.log('🔐 findUserByToken result:', user ? {
-            id: user.id,
-            username: user.username
-        } : 'null');
 
         if (user) {
-            // Store connected user in THIS socketHandlers.ts connectedUsers map
             const connectedUser = {
                 ...user,
                 socketId: socket.id,
@@ -85,8 +75,7 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
             };
             
             connectedUsers.set(socket.id, connectedUser);
-            console.log('✅ Stored user in connectedUsers map:', connectedUser.username);
-            console.log('✅ connectedUsers map now has', connectedUsers.size, 'users');
+            console.log('✅ User authenticated:', connectedUser.username);
 
             // Join global room automatically
             const globalRoom = getOrCreateGlobalRoom();
@@ -114,7 +103,7 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
                 messages: globalRoom.messages.slice(-10),
             });
 
-            console.log('✅ Authentication completed successfully for:', user.username);
+            console.log('✅ Authentication completed for:', user.username);
         } else {
             console.log('❌ Authentication failed - user not found');
             socket.emit('authenticated', {
@@ -186,18 +175,60 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
         }
     });
 
-
     // Join game room (for active games)
     socket.on('join-game', (gameId: string) => {
         const user = connectedUsers.get(socket.id);
-        console.log('🔍 User found:', user ? user.username : 'null');
         if (!user) {
-            console.log('❌ User not authenticated for reveal card');
+            console.log('❌ User not authenticated for join-game');
             socket.emit('game:error', 'Not authenticated');
             return;
         }
 
         console.log(`🎮 User ${user.username} joining game: ${gameId}`);
+
+        // Get the game first
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            console.log(`❌ Game ${gameId} not found`);
+            socket.emit('game:error', 'Game not found');
+            return;
+        }
+
+        // Check authorization
+        let isAuthorized = gameService.isUserAuthorizedForGame(user.id, gameId.toUpperCase());
+        
+        // Fallback: If user is in the game teams but not authorized, authorize them
+        if (!isAuthorized) {
+            console.log('🔧 Checking if user should have access...');
+            const gameState = game.getGame();
+            let shouldHaveAccess = false;
+            
+            if (gameState.redTeam) {
+                if (gameState.redTeam.spymaster?.id === user.id) shouldHaveAccess = true;
+                if (gameState.redTeam.operatives?.some((p: any) => p.id === user.id)) shouldHaveAccess = true;
+            }
+            
+            if (gameState.blueTeam) {
+                if (gameState.blueTeam.spymaster?.id === user.id) shouldHaveAccess = true;
+                if (gameState.blueTeam.operatives?.some((p: any) => p.id === user.id)) shouldHaveAccess = true;
+            }
+            
+            if (shouldHaveAccess) {
+                console.log(`🔧 Authorizing ${user.username} for game access`);
+                gameService.authorizeUserForGame(user.id, gameId.toUpperCase());
+                isAuthorized = true;
+            }
+        }
+
+        if (!isAuthorized) {
+            console.log(`❌ ${user.username} not authorized for game ${gameId}`);
+            socket.emit('game:error', {
+                error: 'You are not authorized to access this game',
+                code: 'NOT_AUTHORIZED',
+                gameId: gameId
+            });
+            return;
+        }
 
         // Leave any previous rooms (except GLOBAL)
         const socketRooms = Array.from(socket.rooms) as string[];
@@ -214,26 +245,18 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
 
         console.log(`✅ ${user.username} joined game room: ${gameRoomCode}`);
 
-        // Send current game state if it exists
-        const game = gameService.getGameByCode(gameRoomCode);
-        if (game) {
-            const gameState = game.getGame();
-            socket.emit('game:state-updated', gameState);
-            console.log(`📡 Sent current game state to ${user.username}`);
-        } else {
-            console.log(`❌ Game ${gameRoomCode} not found`);
-            socket.emit('game:error', 'Game not found');
-        }
+        // Send current game state
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        console.log(`📡 Sent current game state to ${user.username}`);
     });
 
     // Join team in lobby
     socket.on('lobby:join-team', (data: { lobbyId: string; team: string; role: string }) => {
-        console.log('🎯🎯🎯 LOBBY:JOIN-TEAM EVENT RECEIVED via handlers! 🎯🎯🎯');
-        console.log('🔍 Raw data received:', JSON.stringify(data, null, 2));
+        console.log('👥 LOBBY:JOIN-TEAM EVENT RECEIVED');
         
         const user = connectedUsers.get(socket.id);
         if (!user) {
-            console.log('❌ User not found in connectedUsers map!');
             socket.emit('lobby-error', 'Not authenticated');
             return;
         }
@@ -242,7 +265,6 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
 
         const lobby = gameLobbies.get(data.lobbyId.toUpperCase());
         if (!lobby) {
-            console.log('❌ Lobby not found!');
             socket.emit('lobby-error', 'Lobby not found');
             return;
         }
@@ -294,8 +316,6 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
 
     // Leave team in lobby
     socket.on('lobby:leave-team', (data: { lobbyId: string; team: string; role: string }) => {
-        console.log('🎯🎯🎯 LOBBY:LEAVE-TEAM EVENT RECEIVED via handlers! 🎯🎯🎯');
-        
         const user = connectedUsers.get(socket.id);
         if (!user) {
             socket.emit('lobby-error', 'Not authenticated');
@@ -344,7 +364,7 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
 
     // Start game from lobby
     socket.on('lobby:start-game', (data: { lobbyId: string }) => {
-        console.log('🚀 lobby:start-game via handlers');
+        console.log('🚀 lobby:start-game received');
         
         const user = connectedUsers.get(socket.id);
         if (!user) {
@@ -364,7 +384,7 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
 
         // Only lobby owner can start the game
         if (lobby.owner !== user.id) {
-            console.log(`❌ ${user.username} (${user.id}) tried to start game but is not owner (${lobby.owner})`);
+            console.log(`❌ ${user.username} tried to start game but is not owner`);
             socket.emit('lobby-error', 'Only the lobby owner can start the game');
             return;
         }
@@ -378,10 +398,6 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
                              lobby.blueTeam.spymaster && 
                              lobby.blueTeam.operatives.length > 0;
 
-        console.log('🔍 Team validation:');
-        console.log(`  Red team valid: ${redTeamValid}`);
-        console.log(`  Blue team valid: ${blueTeamValid}`);
-
         if (!redTeamValid && !blueTeamValid) {
             console.log('❌ No valid teams found');
             socket.emit('lobby-error', 'Need at least one valid team (spymaster + operatives) to start');
@@ -392,15 +408,59 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
         try {
             console.log(`🎮 Creating game for lobby ${lobbyId}`);
             
-            // Create or get the game for this room
             const game = gameService.createGameForRoom(lobbyId.toUpperCase());
-            console.log(`🎮 Game created with ID: ${game.getId()}`);
+            const gameId = game.getId();
+            console.log(`🎮 Game created with ID: ${gameId}`);            
+            // 🔍 DETAILED GAME CREATION DEBUG
+            console.log('🔍 [GAME-CREATE] === DETAILED DEBUG INFO ===');
+            console.log('🔍 [GAME-CREATE] Game ID:', gameId);
+            console.log('🔍 [GAME-CREATE] Game Code:', game.getGameCode());
+            console.log('🔍 [GAME-CREATE] Game Status:', game.getStatus());
+            
+            // Test if we can immediately find the game
+            const testLookup = gameService.getGameByCode(lobbyId.toUpperCase());
+            console.log('🔍 [GAME-CREATE] Immediate lookup test:', testLookup ? 'FOUND' : 'NOT FOUND');
+            
+            if (testLookup) {
+                console.log('🔍 [GAME-CREATE] Test lookup game ID:', testLookup.getId());
+                console.log('🔍 [GAME-CREATE] Test lookup game code:', testLookup.getGameCode());
+            }
+            
+            // Check gameService internal state
+            const stats = gameService.getStats();
+            console.log('🔍 [GAME-CREATE] GameService stats:', stats);
+            
+            // 🔐 AUTHORIZE ALL PLAYERS for the new game
+            console.log('🔐 Authorizing all lobby players for game:', gameId);
+            
+            if (lobby.redTeam) {
+                if (lobby.redTeam.spymaster) {
+                    gameService.authorizeUserForGame(lobby.redTeam.spymaster.id, gameId);
+                    console.log(`🔐 Authorized red spymaster: ${lobby.redTeam.spymaster.username}`);
+                }
+                lobby.redTeam.operatives.forEach((operative: any) => {
+                    gameService.authorizeUserForGame(operative.id, gameId);
+                    console.log(`🔐 Authorized red operative: ${operative.username}`);
+                });
+            }
+            
+            if (lobby.blueTeam) {
+                if (lobby.blueTeam.spymaster) {
+                    gameService.authorizeUserForGame(lobby.blueTeam.spymaster.id, gameId);
+                    console.log(`🔐 Authorized blue spymaster: ${lobby.blueTeam.spymaster.username}`);
+                }
+                lobby.blueTeam.operatives.forEach((operative: any) => {
+                    gameService.authorizeUserForGame(operative.id, gameId);
+                    console.log(`🔐 Authorized blue operative: ${operative.username}`);
+                });
+            }
+            
+            console.log('✅ All lobby players authorized for game:', gameId);
             
             // Transfer lobby teams to game
             if (lobby.redTeam || lobby.blueTeam) {
-                console.log('🔄 Converting and transferring lobby teams to game...');
+                console.log('🔄 Transferring lobby teams to game...');
                 
-                // Convert lobby teams to game teams
                 const convertedRedTeam = (lobby.redTeam && lobby.redTeam.spymaster) ? {
                     spymaster: {
                         id: lobby.redTeam.spymaster.id,
@@ -433,53 +493,15 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
                 
                 game.setTeams(convertedRedTeam, convertedBlueTeam);
                 console.log('✅ Teams transferred successfully');
-                
-                // Add all players to gameService playerGameMap
-                console.log('🔗 Adding players to gameService playerGameMap...');
-                
-                // Add red team players
-                if (convertedRedTeam) {
-                    if (convertedRedTeam.spymaster) {
-                        gameService.addPlayerToGame(game.getId(), convertedRedTeam.spymaster.id, convertedRedTeam.spymaster.username, convertedRedTeam.spymaster.socketId);
-                        console.log(`  Added red spymaster: ${convertedRedTeam.spymaster.username}`);
-                    }
-                    convertedRedTeam.operatives.forEach((operative: any) => {
-                        gameService.addPlayerToGame(game.getId(), operative.id, operative.username, operative.socketId);
-                        console.log(`  Added red operative: ${operative.username}`);
-                    });
-                }
-                
-                // Add blue team players
-                if (convertedBlueTeam) {
-                    if (convertedBlueTeam.spymaster) {
-                        gameService.addPlayerToGame(game.getId(), convertedBlueTeam.spymaster.id, convertedBlueTeam.spymaster.username, convertedBlueTeam.spymaster.socketId);
-                        console.log(`  Added blue spymaster: ${convertedBlueTeam.spymaster.username}`);
-                    }
-                    convertedBlueTeam.operatives.forEach((operative: any) => {
-                        gameService.addPlayerToGame(game.getId(), operative.id, operative.username, operative.socketId);
-                        console.log(`  Added blue operative: ${operative.username}`);
-                    });
-                }
-                
-                console.log('✅ All players added to gameService');
             }
             
             // Start the game
             console.log('🎮 Starting the game...');
             const startResult = game.startGame();
-            console.log(`🎮 Game start result: ${startResult}`);
             
-            if (!startResult) {
-                throw new Error('Game.startGame() returned false');
-            }
-            
-            // Final verification
-            const finalGameState = game.getGame();
-            console.log('🎮 Final game state:');
-            console.log(`  Game status: ${finalGameState?.status}`);
-            
-            if (finalGameState?.status === 'playing') {
-                console.log(`✅ Game ${lobbyId} started successfully with status 'playing'`);
+            if (startResult) {
+                const gameState = game.getGame();
+                console.log(`✅ Game ${lobbyId} started successfully with status: ${gameState.status}`);
                 
                 // Emit game-started event
                 io.to(lobbyId.toUpperCase()).emit('game-started', {
@@ -487,24 +509,22 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
                     gameId: lobbyId.toUpperCase()
                 });
                 
-                // 🔒 CLOSE LOBBY: Mark lobby as closed now that game has started
+                // Close lobby
                 const lobbyToClose = gameLobbies.get(lobbyId.toUpperCase());
                 if (lobbyToClose) {
                     lobbyToClose.status = 'closed';
                     lobbyToClose.updatedAt = new Date().toISOString();
-                    console.log(`🔒 Marked lobby ${lobbyId} as closed after game start`);
+                    console.log(`🔒 Marked lobby ${lobbyId} as closed`);
                     
-                    // 📡 BROADCAST: Notify all users that this lobby is now closed
                     io.to('GLOBAL').emit('lobby:closed', {
                         lobbyCode: lobbyId.toUpperCase(),
                         message: `Lobby ${lobbyId} has started a game`
                     });
-                    console.log(`📡 Broadcasted lobby:closed for ${lobbyId} to all users`);
                 }
                 
                 console.log(`✅ Game started successfully for lobby ${lobbyId}`);
             } else {
-                throw new Error(`Game status is '${finalGameState?.status}', expected 'playing'`);
+                throw new Error('Game start failed');
             }
             
         } catch (error: any) {
@@ -513,178 +533,83 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
         }
     });
 
-    // =================
-    // GAME ACTION HANDLERS
-    // =================
-    
-    // Give clue handler
+    // Game action handlers
     socket.on('game:give-clue', (data: { gameId: string; word: string; number: number }) => {
-        console.log('🎯 game:give-clue received:', data);
-        
         const user = connectedUsers.get(socket.id);
-        console.log('🔍 User found:', user ? user.username : 'null');
         if (!user) {
-            console.log('❌ User not authenticated for reveal card');
             socket.emit('game:error', 'Not authenticated');
             return;
         }
 
         const { gameId, word, number } = data;
-        if (!gameId || !word || !number) {
-            socket.emit('game:error', 'Missing required parameters');
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            socket.emit('game:error', 'Game not found');
             return;
         }
 
-        try {
-            // Find game directly by gameId (much cleaner!)
-            const game = gameService.getGameByCode(gameId.toUpperCase());
-            console.log('🔍 Game lookup result:', game ? 'found' : 'not found');
-            if (!game) {
-                console.log(`❌ Game not found: ${gameId}`);
-                socket.emit('game:error', 'Game not found');
-                return;
-            }
-
-            // Call giveClue on the game object directly
-            const clueResult = game.giveClue(user.id, word, number);
-            
-            if (clueResult) {
-                const gameState = game.getGame();
-                console.log(`✅ Clue given successfully: ${word} (${number})`);
-                
-                // 🔍 DEBUG: Check game state after clue
-                console.log('🔍 [CLUE DEBUG] Game state after giving clue:');
-                console.log('  Current clue:', gameState.currentClue);
-                console.log('  Guesses remaining:', gameState.guessesRemaining);
-                console.log('  Current turn:', gameState.currentTurn);
-                console.log('  Game status:', gameState.status);
-                
-                // Broadcast updated game state to all players in the room
-                console.log(`📡 Broadcasting game:state-updated to room: ${gameId.toUpperCase()}`);
-                io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
-                
-                // Also emit specific clue-given event
-                console.log(`💡 Broadcasting game:clue-given to room: ${gameId.toUpperCase()}`);
-                io.to(gameId.toUpperCase()).emit('game:clue-given', gameState.currentClue);
-            } else {
-                console.log(`❌ Failed to give clue`);
-                socket.emit('game:error', 'Failed to give clue');
-            }
-        } catch (error: any) {
-            console.error('❌ Error in game:give-clue handler:', error);
-            socket.emit('game:error', 'Internal error giving clue');
+        const clueResult = game.giveClue(user.id, word, number);
+        if (clueResult) {
+            const gameState = game.getGame();
+            io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
+            io.to(gameId.toUpperCase()).emit('game:clue-given', gameState.currentClue);
+        } else {
+            socket.emit('game:error', 'Failed to give clue');
         }
     });
 
-    // Reveal card handler
     socket.on('game:reveal-card', (data: { gameId: string; cardId: string }) => {
-        console.log('🎯 game:reveal-card received:', data);
-        console.log('🔍 Socket ID:', socket.id);
-        console.log('🔍 Socket rooms:', Array.from(socket.rooms));
-        console.log('🎯 game:reveal-card received:', data);
-        
         const user = connectedUsers.get(socket.id);
-        console.log('🔍 User found:', user ? user.username : 'null');
         if (!user) {
-            console.log('❌ User not authenticated for reveal card');
             socket.emit('game:error', 'Not authenticated');
             return;
         }
 
         const { gameId, cardId } = data;
-        if (!gameId || !cardId) {
-            socket.emit('game:error', 'Missing required parameters');
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            socket.emit('game:error', 'Game not found');
             return;
         }
 
-        try {
-            // Find game directly by gameId
-            const game = gameService.getGameByCode(gameId.toUpperCase());
-            console.log('🔍 Game lookup result:', game ? 'found' : 'not found');
-            if (!game) {
-                console.log(`❌ Game not found: ${gameId}`);
-                socket.emit('game:error', 'Game not found');
-                return;
-            }
-
-            console.log('🔍 About to call game.revealCard with:', { userId: user.id, cardId });
-            const result = game.revealCard(user.id, cardId);
-            console.log('🔍 game.revealCard result:', result);
+        const result = game.revealCard(user.id, cardId);
+        if (result.success) {
+            const gameState = game.getGame();
+            io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
             
-            if (result.success) {
-                const gameState = game.getGame();
-                console.log(`✅ Card revealed successfully: ${cardId}`);
-                
-                // Broadcast updated game state to all players
-                io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
-                
-                // Emit specific card-revealed event
-                if (result.card) {
-                    io.to(gameId.toUpperCase()).emit('game:card-revealed', result.card);
-                }
-                
-                // Check for game end
-                if (result.gameEnded && result.winner) {
-                    console.log(`🏆 Game ended! Winner: ${result.winner}`);
-                    io.to(gameId.toUpperCase()).emit('game:game-ended', result.winner);
-                }
-            } else {
-                console.log(`❌ Failed to reveal card`);
-                socket.emit('game:error', 'Failed to reveal card');
+            if (result.card) {
+                io.to(gameId.toUpperCase()).emit('game:card-revealed', result.card);
             }
-        } catch (error: any) {
-            console.error('❌ Error in game:reveal-card handler:', error);
-            socket.emit('game:error', 'Internal error revealing card');
+            
+            if (result.gameEnded && result.winner) {
+                io.to(gameId.toUpperCase()).emit('game:game-ended', result.winner);
+            }
+        } else {
+            socket.emit('game:error', 'Failed to reveal card');
         }
     });
 
-    // End turn handler
     socket.on('game:end-turn', (data: { gameId: string }) => {
-        console.log('🎯 game:end-turn received:', data);
-        
         const user = connectedUsers.get(socket.id);
-        console.log('🔍 User found:', user ? user.username : 'null');
         if (!user) {
-            console.log('❌ User not authenticated for reveal card');
             socket.emit('game:error', 'Not authenticated');
             return;
         }
 
         const { gameId } = data;
-        if (!gameId) {
-            socket.emit('game:error', 'Missing required parameters');
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            socket.emit('game:error', 'Game not found');
             return;
         }
 
-        try {
-            // Find game directly by gameId
-            const game = gameService.getGameByCode(gameId.toUpperCase());
-            console.log('🔍 Game lookup result:', game ? 'found' : 'not found');
-            if (!game) {
-                console.log(`❌ Game not found: ${gameId}`);
-                socket.emit('game:error', 'Game not found');
-                return;
-            }
-
-            // Call endTurn on the game object (no parameters needed)
-            const turnResult = game.endTurn();
-            
-            if (turnResult) {
-                const gameState = game.getGame();
-                console.log(`✅ Turn ended successfully, now ${gameState.currentTurn} team's turn`);
-                
-                // Broadcast updated game state
-                io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
-                
-                // Emit turn change event
-                io.to(gameId.toUpperCase()).emit('game:turn-changed', gameState.currentTurn);
-            } else {
-                console.log(`❌ Failed to end turn`);
-                socket.emit('game:error', 'Failed to end turn');
-            }
-        } catch (error: any) {
-            console.error('❌ Error in game:end-turn handler:', error);
-            socket.emit('game:error', 'Internal error ending turn');
+        const turnResult = game.endTurn();
+        if (turnResult) {
+            const gameState = game.getGame();
+            io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
+            io.to(gameId.toUpperCase()).emit('game:turn-changed', gameState.currentTurn);
+        } else {
+            socket.emit('game:error', 'Failed to end turn');
         }
     });
 
@@ -692,7 +617,7 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
     socket.on('disconnect', () => {
         const user = connectedUsers.get(socket.id);
         if (user) {
-            console.log('📡 Socket disconnected via handlers:', socket.id, user.username);
+            console.log('📡 Socket disconnected:', socket.id, user.username);
 
             // Remove from global room
             const globalRoom = getOrCreateGlobalRoom();
@@ -711,14 +636,7 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
 
             connectedUsers.delete(socket.id);
         } else {
-            console.log('📡 Socket disconnected via handlers:', socket.id, '(unauthenticated)');
+            console.log('📡 Socket disconnected:', socket.id, '(unauthenticated)');
         }
     });
-
-    // Handle authentication timeout
-    setTimeout(() => {
-        if (!connectedUsers.has(socket.id)) {
-            console.log('⚠️ Socket', socket.id, 'connected but not authenticated after 5 seconds');
-        }
-    }, 5000);
 };

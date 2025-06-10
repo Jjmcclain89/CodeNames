@@ -195,6 +195,56 @@ app.post('/api/auth/verify', (req: Request, res: Response): void => {
   }
 });
 
+
+// Get user's current authorized games
+app.get('/api/auth/user-games', (req: Request, res: Response): void => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token) {
+      res.status(401).json({
+        success: false,
+        error: 'Authorization token required'
+      });
+      return;
+    }
+    
+    // Find user by token
+    let foundUser = null;
+    for (const [userId, userData] of users.entries()) {
+      if (userData.token === token) {
+        foundUser = userData;
+        break;
+      }
+    }
+    
+    if (!foundUser) {
+      res.status(401).json({
+        success: false,
+        error: 'Invalid token'
+      });
+      return;
+    }
+    
+    // For now, return empty games array - will be populated as users join games
+    res.json({
+      success: true,
+      games: [],
+      user: {
+        id: foundUser.id,
+        username: foundUser.username
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching user games:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user games'
+    });
+  }
+});
+
 console.log('🔗 API routes configured');
 
 // ========================================

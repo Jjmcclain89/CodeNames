@@ -28,7 +28,7 @@ export interface ChatMessage {
 class SocketService {
   private _socket: Socket | null = null;
   private token: string | null = null;
-  private isConnecting: boolean = false; // Track connection in progress
+  private isConnecting: boolean = false;
   private connectionCounter: number = 0;
   private lastAuthenticatedToken: string | null = null;
 
@@ -38,16 +38,7 @@ class SocketService {
 
   connect(): Socket {
     this.connectionCounter++;
-    // Track what is calling connect
     console.log('🔌 CONNECT() CALLED #' + this.connectionCounter);
-    console.log('🔌 Call stack:', new Error().stack?.split('\n').slice(0, 8).join('\n'));
-    console.log('🔌 Current socket state:', {
-      hasSocket: !!this._socket,
-      isConnected: this._socket?.connected,
-      isConnecting: this.isConnecting,
-      socketId: this._socket?.id,
-      connectionCounter: this.connectionCounter
-    });
 
     // Make socket service accessible for debugging
     (window as any).socketService = this;
@@ -74,7 +65,7 @@ class SocketService {
     console.log('📡 Creating new socket connection');
     this.isConnecting = true;
 
-    // Dynamic socket URL - use same host as current page for mobile compatibility
+    // Dynamic socket URL
     const currentHost = window.location.hostname;
     const isLocalhost = currentHost === 'localhost' || currentHost === '127.0.0.1';
     const socketPort = '3001';
@@ -82,26 +73,17 @@ class SocketService {
     let socketUrl;
     if (import.meta.env.VITE_SOCKET_URL) {
       socketUrl = import.meta.env.VITE_SOCKET_URL;
-      console.log('📡 Using VITE_SOCKET_URL:', socketUrl);
     } else if (isLocalhost) {
       socketUrl = `http://localhost:${socketPort}`;
-      console.log('📡 Using localhost for dev:', socketUrl);
     } else {
-      // Mobile or IP access - use same host as current page
       socketUrl = `http://${currentHost}:${socketPort}`;
-      console.log('📡 Using dynamic host for mobile/IP access:', socketUrl);
     }
-    
-    console.log('📱 Current page host:', currentHost);
-    console.log('📱 Detected environment:', isLocalhost ? 'Localhost' : 'Remote/Mobile');
-    console.log('📱 Final socket URL:', socketUrl);
-    console.log('📱 User agent:', navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop');
 
     this._socket = io(socketUrl, {
       autoConnect: false,
       transports: ['websocket', 'polling'],
       timeout: 5000,
-      forceNew: false, // Don't force new connections
+      forceNew: false,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000
@@ -118,26 +100,18 @@ class SocketService {
       console.log('📡 Disconnecting socket');
       this._socket.disconnect();
       this._socket = null;
-      this.isConnecting = false; // Reset connection state
-      this.lastAuthenticatedToken = null; // Reset authentication state
+      this.isConnecting = false;
+      this.lastAuthenticatedToken = null;
     }
   }
 
   authenticate(token: string): void {
-    console.log('🔐 AUTHENTICATE() CALLED');
-    console.log('🔐 Socket exists:', !!this._socket);
-    console.log('🔐 Socket connected:', this._socket?.connected);
-    console.log('🔐 Socket ID:', this._socket?.id);
-    console.log('🔐 Token (first 20 chars):', token?.substring(0, 20) + '...');
-    console.log('🔐 Last authenticated token:', this.lastAuthenticatedToken?.substring(0, 20) + '...');
+    console.log('🔐 [SERVICE] authenticate called, socket connected:', this._socket?.connected);
     
     // Prevent duplicate authentication with the same token
     if (this.lastAuthenticatedToken === token && this._socket?.connected) {
-      console.log('🔐 Already authenticated with this token, triggering success callback immediately');
-      // Trigger the authenticated callback immediately since we're already authenticated
-      // setTimeout removed - using direct callback approach
-        this._socket?.emit('authenticated', { success: true, user: { token } });
-      
+      console.log('🔐 Already authenticated with this token');
+      this._socket?.emit('authenticated', { success: true, user: { token } });
       return;
     }
     
@@ -152,75 +126,9 @@ class SocketService {
     }
   }
 
-  joinRoom(roomCode: string): void {
-    if (this._socket) {
-      console.log('🏠 Joining room:', roomCode);
-      this._socket.emit('join-room', { roomCode });
-    }
-  }
-
-  leaveRoom(): void {
-    if (this._socket) {
-      console.log('🚪 Leaving room');
-      this._socket.emit('leave-room');
-    }
-  }
-
-  createRoom(roomName?: string): void {
-    if (this._socket) {
-      console.log('🏗️ Creating room:', roomName || 'Unnamed');
-      this._socket.emit('create-room', { roomName });
-    }
-  }
-
-  sendMessage(message: string): void {
-    if (this._socket) {
-      console.log('💬 Sending message:', message);
-      this._socket.emit('chat-message', { message });
-    }
-  }
-
-
-  // Lobby event listeners
-  onLobbyCreated(callback: (data: any) => void): void {
-    this._socket?.on('lobby:created', callback);
-  }
-
-  onLobbyClosed(callback: (data: any) => void): void {
-    this._socket?.on('lobby:closed', callback);
-  }
-
   // Event listener registration methods
   onAuthenticated(callback: (data: any) => void): void {
     this._socket?.on('authenticated', callback);
-  }
-
-  onRoomJoined(callback: (data: any) => void): void {
-    this._socket?.on('room-joined', callback);
-  }
-
-  onRoomCreated(callback: (data: any) => void): void {
-    this._socket?.on('room-created', callback);
-  }
-
-  onUserJoined(callback: (data: any) => void): void {
-    this._socket?.on('user-joined', callback);
-  }
-
-  onUserLeft(callback: (data: any) => void): void {
-    this._socket?.on('user-left', callback);
-  }
-
-  onRoomUsersUpdated(callback: (data: { users: User[] }) => void): void {
-    this._socket?.on('room-users-updated', callback);
-  }
-
-  onChatMessage(callback: (message: ChatMessage) => void): void {
-    this._socket?.on('chat-message', callback);
-  }
-
-  onError(callback: (error: any) => void): void {
-    this._socket?.on('error', callback);
   }
 
   onConnect(callback: () => void): void {
@@ -245,11 +153,7 @@ class SocketService {
 
     this._socket.on('connect', () => {
       console.log('✅ Connected to server, Socket ID:', this._socket?.id);
-      console.log('🔌 Connect event fired - total event listeners:', this._socket?.listeners('connect').length);
-      this.isConnecting = false; // Connection completed
-      
-      // NOTE: Manual authentication will be called by App.tsx - no need to auto-authenticate
-      console.log('🔐 Socket connected, waiting for manual authentication call');
+      this.isConnecting = false;
     });
 
     this._socket.on('disconnect', (reason) => {
@@ -258,20 +162,16 @@ class SocketService {
 
     this._socket.on('connect_error', (error) => {
       console.error('🚫 Socket connection error:', error);
-      this.isConnecting = false; // Reset on connection error
-    });
-
-    this._socket.on('reconnect', (attemptNumber) => {
-      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
-    });
-
-    this._socket.on('reconnect_error', (error) => {
-      console.error('🔄 Reconnection failed:', error);
+      this.isConnecting = false;
     });
   }
 
   get isConnected(): boolean {
     return this._socket?.connected || false;
+  }
+
+  get isAuthenticated(): boolean {
+    return !!this.lastAuthenticatedToken && this.isConnected;
   }
 
   get isConnectionReady(): boolean {

@@ -1,397 +1,2180 @@
 ================================================================================
 COMBINED FILES FOR CLAUDE IMPORT
-Generated from 2 files
+Generated from 5 files
 ================================================================================
 
 TABLE OF CONTENTS:
- 1. frontend/src/components/GamesList/GamesList.tsx
- 2. frontend/src/pages/HomePage.tsx
+ 1. backend/src/socket/socketHandlers.ts
+ 2. backend/src/services/gameService.ts
+ 3. backend/src/routes/games.ts
+ 4. frontend/src/pages/GamePage.tsx
+ 5. frontend/src/services/socketService.ts
 
 ================================================================================
 
 ============================================================
-FILE: frontend/src/components/GamesList/GamesList.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GamesList\GamesList.tsx
-SIZE: 12546 characters
+FILE: backend/src/socket/socketHandlers.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\socket\socketHandlers.ts
+SIZE: 24489 characters
+============================================================
+import { Server, Socket } from 'socket.io';
+import { PrismaClient } from '@prisma/client';
+import { gameLobbies } from '../routes/gameLobbies';
+import { gameService } from '../services/gameService';
+
+interface AuthenticatedSocket extends Socket {
+  userId?: string;
+  username?: string;
+  currentRoom?: string;
+}
+
+// Get access to users map from index.ts
+let externalUsersMap: Map<string, any> | null = null;
+
+// Variables needed for socket handlers
+const users = new Map<string, any>();
+const rooms = new Map<string, any>();
+const connectedUsers = new Map<string, any>();
+const userRooms = new Map<string, string>();
+
+// Function to sync users map from index.ts
+export const setUsersMap = (usersMapFromIndex: Map<string, any>) => {
+    externalUsersMap = usersMapFromIndex;
+    console.log('📋 socketHandlers.ts received users map with', usersMapFromIndex.size, 'users');
+};
+
+// Helper functions
+function findUserByToken(token: string) {
+    if (!token) {
+        return null;
+    }
+
+    if (externalUsersMap) {
+        for (const [userId, userData] of externalUsersMap.entries()) {
+            if (userData.token === token) {
+                console.log('✅ Found user in shared users map:', userData.username);
+                return userData;
+            }
+        }
+        console.log('❌ User not found in shared users map for token:', token.substring(0, 20) + '...');
+    } else {
+        console.log('❌ External users map not available!');
+    }
+
+    return null;
+}
+
+function getOrCreateGlobalRoom() {
+    if (!rooms.has('GLOBAL')) {
+        const globalRoom = {
+            code: 'GLOBAL',
+            users: new Map(),
+            messages: [],
+            createdAt: new Date().toISOString(),
+        };
+        rooms.set('GLOBAL', globalRoom);
+    }
+    return rooms.get('GLOBAL');
+}
+
+export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, prisma: PrismaClient) => {
+    console.log('📡 Socket connected:', socket.id);
+
+    // Authentication handler
+    socket.on('authenticate', (token: string) => {
+        console.log('🔐 Authentication request from socket:', socket.id);
+        
+        const user = findUserByToken(token);
+
+        if (user) {
+            const connectedUser = {
+                ...user,
+                socketId: socket.id,
+                connectedAt: new Date().toISOString(),
+            };
+            
+            connectedUsers.set(socket.id, connectedUser);
+            console.log('✅ User authenticated:', connectedUser.username);
+
+            // Join global room automatically
+            const globalRoom = getOrCreateGlobalRoom();
+            globalRoom.users.set(socket.id, user);
+            socket.join('GLOBAL');
+
+            socket.emit('authenticated', {
+                success: true,
+                user: user,
+                lobbyCode: 'GLOBAL',
+            });
+
+            // Notify others in global room
+            socket.to('GLOBAL').emit('user-joined', {
+                user: user,
+                message: `${user.username} joined the chat`,
+            });
+
+            // Send current users in room
+            const roomUsers = Array.from(globalRoom.users.values());
+            io.to('GLOBAL').emit('room-users', { users: roomUsers });
+
+            // Send recent messages
+            socket.emit('recent-messages', {
+                messages: globalRoom.messages.slice(-10),
+            });
+
+            console.log('✅ Authentication completed for:', user.username);
+        } else {
+            console.log('❌ Authentication failed - user not found');
+            socket.emit('authenticated', {
+                success: false,
+                error: 'Invalid token',
+            });
+        }
+    });
+
+    // Global chat message handler
+    socket.on('send-message', (data: any) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('error', { message: 'Not authenticated' });
+            return;
+        }
+
+        const message = {
+            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            username: user.username,
+            userId: user.id,
+            text: data.message,
+            timestamp: new Date().toISOString(),
+        };
+
+        const globalRoom = getOrCreateGlobalRoom();
+        globalRoom.messages.push(message);
+
+        if (globalRoom.messages.length > 50) {
+            globalRoom.messages = globalRoom.messages.slice(-50);
+        }
+
+        io.to('GLOBAL').emit('new-message', message);
+        console.log(`💬 Message from ${user.username}: ${data.message}`);
+    });
+
+    // Join lobby
+    socket.on('join-lobby', (lobbyCode: string) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('lobby-error', 'Not authenticated');
+            return;
+        }
+
+        console.log(`🏠 User ${user.username} joining lobby: ${lobbyCode}`);
+
+        // Leave any previous rooms (except GLOBAL)
+        const socketRooms = Array.from(socket.rooms) as string[];
+        socketRooms.forEach((room) => {
+            if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+                socket.leave(room);
+            }
+        });
+
+        // Join the new room
+        socket.join(lobbyCode.toUpperCase());
+        userRooms.set(socket.id, lobbyCode.toUpperCase());
+
+        // Notify others in room
+        socket.to(lobbyCode.toUpperCase()).emit('player-joined-lobby', {
+            player: { username: user.username, id: user.id },
+            message: `${user.username} joined the room`,
+        });
+
+        // Emit current lobby state if it exists
+        const lobby = gameLobbies.get(lobbyCode.toUpperCase());
+        if (lobby) {
+            socket.emit('lobby-updated', lobby);
+        }
+    });
+
+    // Join game room (for active games)
+    socket.on('join-game', (gameId: string) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            console.log('❌ User not authenticated for join-game');
+            socket.emit('game:error', 'Not authenticated');
+            return;
+        }
+
+        console.log(`🎮 User ${user.username} joining game: ${gameId}`);
+
+        // Get the game first
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            console.log(`❌ Game ${gameId} not found`);
+            socket.emit('game:error', 'Game not found');
+            return;
+        }
+
+        // Check authorization
+        let isAuthorized = gameService.isUserAuthorizedForGame(user.id, gameId.toUpperCase());
+        
+        // Fallback: If user is in the game teams but not authorized, authorize them
+        if (!isAuthorized) {
+            console.log('🔧 Checking if user should have access...');
+            const gameState = game.getGame();
+            let shouldHaveAccess = false;
+            
+            if (gameState.redTeam) {
+                if (gameState.redTeam.spymaster?.id === user.id) shouldHaveAccess = true;
+                if (gameState.redTeam.operatives?.some((p: any) => p.id === user.id)) shouldHaveAccess = true;
+            }
+            
+            if (gameState.blueTeam) {
+                if (gameState.blueTeam.spymaster?.id === user.id) shouldHaveAccess = true;
+                if (gameState.blueTeam.operatives?.some((p: any) => p.id === user.id)) shouldHaveAccess = true;
+            }
+            
+            if (shouldHaveAccess) {
+                console.log(`🔧 Authorizing ${user.username} for game access`);
+                gameService.authorizeUserForGame(user.id, gameId.toUpperCase());
+                isAuthorized = true;
+            }
+        }
+
+        if (!isAuthorized) {
+            console.log(`❌ ${user.username} not authorized for game ${gameId}`);
+            socket.emit('game:error', {
+                error: 'You are not authorized to access this game',
+                code: 'NOT_AUTHORIZED',
+                gameId: gameId
+            });
+            return;
+        }
+
+        // Leave any previous rooms (except GLOBAL)
+        const socketRooms = Array.from(socket.rooms) as string[];
+        socketRooms.forEach((room) => {
+            if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
+                socket.leave(room);
+            }
+        });
+
+        // Join the game room
+        const gameRoomCode = gameId.toUpperCase();
+        socket.join(gameRoomCode);
+        userRooms.set(socket.id, gameRoomCode);
+
+        console.log(`✅ ${user.username} joined game room: ${gameRoomCode}`);
+
+        // Send current game state
+        const gameState = game.getGame();
+        socket.emit('game:state-updated', gameState);
+        console.log(`📡 Sent current game state to ${user.username}`);
+    });
+
+    // Join team in lobby
+    socket.on('lobby:join-team', (data: { lobbyId: string; team: string; role: string }) => {
+        console.log('👥 LOBBY:JOIN-TEAM EVENT RECEIVED');
+        
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('lobby-error', 'Not authenticated');
+            return;
+        }
+
+        console.log(`👥 ${user.username} joining ${data.team} team as ${data.role} in lobby ${data.lobbyId}`);
+
+        const lobby = gameLobbies.get(data.lobbyId.toUpperCase());
+        if (!lobby) {
+            socket.emit('lobby-error', 'Lobby not found');
+            return;
+        }
+
+        const player = {
+            id: user.id,
+            username: user.username,
+            isOnline: true,
+            socketId: socket.id,
+        };
+
+        // Initialize teams if they don't exist
+        if (!lobby.redTeam) {
+            lobby.redTeam = { operatives: [] };
+        }
+        if (!lobby.blueTeam) {
+            lobby.blueTeam = { operatives: [] };
+        }
+
+        // Remove player from any existing team first
+        if (lobby.redTeam.spymaster?.id === user.id) {
+            lobby.redTeam.spymaster = undefined;
+        }
+        if (lobby.blueTeam.spymaster?.id === user.id) {
+            lobby.blueTeam.spymaster = undefined;
+        }
+        lobby.redTeam.operatives = lobby.redTeam.operatives.filter((p: any) => p.id !== user.id);
+        lobby.blueTeam.operatives = lobby.blueTeam.operatives.filter((p: any) => p.id !== user.id);
+
+        // Add player to new team and role
+        if (data.team === 'red') {
+            if (data.role === 'spymaster') {
+                lobby.redTeam.spymaster = player;
+            } else if (data.role === 'operative') {
+                lobby.redTeam.operatives.push(player);
+            }
+        } else if (data.team === 'blue') {
+            if (data.role === 'spymaster') {
+                lobby.blueTeam.spymaster = player;
+            } else if (data.role === 'operative') {
+                lobby.blueTeam.operatives.push(player);
+            }
+        }
+
+        lobby.updatedAt = new Date().toISOString();
+        io.to(data.lobbyId.toUpperCase()).emit('lobby-updated', lobby);
+        console.log(`✅ ${user.username} joined ${data.team} team as ${data.role}`);
+    });
+
+    // Leave team in lobby
+    socket.on('lobby:leave-team', (data: { lobbyId: string; team: string; role: string }) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('lobby-error', 'Not authenticated');
+            return;
+        }
+
+        const { lobbyId, team, role } = data;
+        const lobby = gameLobbies.get(lobbyId.toUpperCase());
+        if (!lobby) {
+            socket.emit('lobby-error', 'Lobby not found');
+            return;
+        }
+
+        let removed = false;
+
+        // Remove from red team
+        if (team === 'red' && lobby.redTeam) {
+            if (role === 'spymaster' && lobby.redTeam.spymaster?.id === user.id) {
+                lobby.redTeam.spymaster = undefined;
+                removed = true;
+            } else if (role === 'operative') {
+                const originalLength = lobby.redTeam.operatives.length;
+                lobby.redTeam.operatives = lobby.redTeam.operatives.filter((p: any) => p.id !== user.id);
+                removed = lobby.redTeam.operatives.length < originalLength;
+            }
+        }
+        
+        // Remove from blue team
+        if (team === 'blue' && lobby.blueTeam) {
+            if (role === 'spymaster' && lobby.blueTeam.spymaster?.id === user.id) {
+                lobby.blueTeam.spymaster = undefined;
+                removed = true;
+            } else if (role === 'operative') {
+                const originalLength = lobby.blueTeam.operatives.length;
+                lobby.blueTeam.operatives = lobby.blueTeam.operatives.filter((p: any) => p.id !== user.id);
+                removed = lobby.blueTeam.operatives.length < originalLength;
+            }
+        }
+
+        if (removed) {
+            lobby.updatedAt = new Date().toISOString();
+            io.to(lobbyId.toUpperCase()).emit('lobby-updated', lobby);
+            console.log(`✅ ${user.username} successfully left ${team} team as ${role}`);
+        }
+    });
+
+    // Start game from lobby
+    socket.on('lobby:start-game', (data: { lobbyId: string }) => {
+        console.log('🚀 lobby:start-game received');
+        
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('lobby-error', 'Not authenticated');
+            return;
+        }
+
+        const { lobbyId } = data;
+        console.log(`🚀 ${user.username} attempting to start game in lobby ${lobbyId}`);
+
+        const lobby = gameLobbies.get(lobbyId.toUpperCase());
+        if (!lobby) {
+            console.log('❌ Lobby not found:', lobbyId);
+            socket.emit('lobby-error', 'Lobby not found');
+            return;
+        }
+
+        // Only lobby owner can start the game
+        if (lobby.owner !== user.id) {
+            console.log(`❌ ${user.username} tried to start game but is not owner`);
+            socket.emit('lobby-error', 'Only the lobby owner can start the game');
+            return;
+        }
+
+        // Validate teams
+        const redTeamValid = lobby.redTeam && 
+                            lobby.redTeam.spymaster && 
+                            lobby.redTeam.operatives.length > 0;
+                            
+        const blueTeamValid = lobby.blueTeam && 
+                             lobby.blueTeam.spymaster && 
+                             lobby.blueTeam.operatives.length > 0;
+
+        if (!redTeamValid && !blueTeamValid) {
+            console.log('❌ No valid teams found');
+            socket.emit('lobby-error', 'Need at least one valid team (spymaster + operatives) to start');
+            return;
+        }
+
+        // Create actual game in gameService
+        try {
+            console.log(`🎮 Creating game for lobby ${lobbyId}`);
+            
+            const game = gameService.createGameForRoom(lobbyId.toUpperCase());
+            const gameId = game.getId();
+            console.log(`🎮 Game created with ID: ${gameId}`);            
+            // 🔍 DETAILED GAME CREATION DEBUG
+            console.log('🔍 [GAME-CREATE] === DETAILED DEBUG INFO ===');
+            console.log('🔍 [GAME-CREATE] Game ID:', gameId);
+            console.log('🔍 [GAME-CREATE] Game Code:', game.getGameCode());
+            console.log('🔍 [GAME-CREATE] Game Status:', game.getStatus());
+            
+            // Test if we can immediately find the game
+            const testLookup = gameService.getGameByCode(lobbyId.toUpperCase());
+            console.log('🔍 [GAME-CREATE] Immediate lookup test:', testLookup ? 'FOUND' : 'NOT FOUND');
+            
+            if (testLookup) {
+                console.log('🔍 [GAME-CREATE] Test lookup game ID:', testLookup.getId());
+                console.log('🔍 [GAME-CREATE] Test lookup game code:', testLookup.getGameCode());
+            }
+            
+            // Check gameService internal state
+            const stats = gameService.getStats();
+            console.log('🔍 [GAME-CREATE] GameService stats:', stats);
+            
+            // 🔐 AUTHORIZE ALL PLAYERS for the new game
+            console.log('🔐 Authorizing all lobby players for game:', gameId);
+            
+            if (lobby.redTeam) {
+                if (lobby.redTeam.spymaster) {
+                    gameService.authorizeUserForGame(lobby.redTeam.spymaster.id, gameId);
+                    console.log(`🔐 Authorized red spymaster: ${lobby.redTeam.spymaster.username}`);
+                }
+                lobby.redTeam.operatives.forEach((operative: any) => {
+                    gameService.authorizeUserForGame(operative.id, gameId);
+                    console.log(`🔐 Authorized red operative: ${operative.username}`);
+                });
+            }
+            
+            if (lobby.blueTeam) {
+                if (lobby.blueTeam.spymaster) {
+                    gameService.authorizeUserForGame(lobby.blueTeam.spymaster.id, gameId);
+                    console.log(`🔐 Authorized blue spymaster: ${lobby.blueTeam.spymaster.username}`);
+                }
+                lobby.blueTeam.operatives.forEach((operative: any) => {
+                    gameService.authorizeUserForGame(operative.id, gameId);
+                    console.log(`🔐 Authorized blue operative: ${operative.username}`);
+                });
+            }
+            
+            console.log('✅ All lobby players authorized for game:', gameId);
+            
+            // Transfer lobby teams to game
+            if (lobby.redTeam || lobby.blueTeam) {
+                console.log('🔄 Transferring lobby teams to game...');
+                
+                const convertedRedTeam = (lobby.redTeam && lobby.redTeam.spymaster) ? {
+                    spymaster: {
+                        id: lobby.redTeam.spymaster.id,
+                        username: lobby.redTeam.spymaster.username,
+                        isOnline: lobby.redTeam.spymaster.isOnline,
+                        socketId: lobby.redTeam.spymaster.socketId || '',
+                    },
+                    operatives: lobby.redTeam.operatives.map((p: any) => ({
+                        id: p.id,
+                        username: p.username,
+                        isOnline: p.isOnline,
+                        socketId: p.socketId || '',
+                    }))
+                } : undefined;
+                
+                const convertedBlueTeam = (lobby.blueTeam && lobby.blueTeam.spymaster) ? {
+                    spymaster: {
+                        id: lobby.blueTeam.spymaster.id,
+                        username: lobby.blueTeam.spymaster.username,
+                        isOnline: lobby.blueTeam.spymaster.isOnline,
+                        socketId: lobby.blueTeam.spymaster.socketId || '',
+                    },
+                    operatives: lobby.blueTeam.operatives.map((p: any) => ({
+                        id: p.id,
+                        username: p.username,
+                        isOnline: p.isOnline,
+                        socketId: p.socketId || '',
+                    }))
+                } : undefined;
+                
+                game.setTeams(convertedRedTeam, convertedBlueTeam);
+                console.log('✅ Teams transferred successfully');
+            }
+            
+            // Start the game
+            console.log('🎮 Starting the game...');
+            const startResult = game.startGame();
+            
+            if (startResult) {
+                const gameState = game.getGame();
+                console.log(`✅ Game ${lobbyId} started successfully with status: ${gameState.status}`);
+                
+                // Emit game-started event
+                io.to(lobbyId.toUpperCase()).emit('game-started', {
+                    redirectTo: `/game/${lobbyId.toUpperCase()}`,
+                    gameId: lobbyId.toUpperCase()
+                });
+                
+                // Close lobby
+                const lobbyToClose = gameLobbies.get(lobbyId.toUpperCase());
+                if (lobbyToClose) {
+                    lobbyToClose.status = 'closed';
+                    lobbyToClose.updatedAt = new Date().toISOString();
+                    console.log(`🔒 Marked lobby ${lobbyId} as closed`);
+                    
+                    io.to('GLOBAL').emit('lobby:closed', {
+                        lobbyCode: lobbyId.toUpperCase(),
+                        message: `Lobby ${lobbyId} has started a game`
+                    });
+                }
+                
+                console.log(`✅ Game started successfully for lobby ${lobbyId}`);
+            } else {
+                throw new Error('Game start failed');
+            }
+            
+        } catch (error: any) {
+            console.error(`❌ Error creating game for lobby ${lobbyId}:`, error);
+            socket.emit('lobby-error', `Failed to start game: ${error.message || 'Unknown error'}`);
+        }
+    });
+
+    // Game action handlers
+    socket.on('game:give-clue', (data: { gameId: string; word: string; number: number }) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('game:error', 'Not authenticated');
+            return;
+        }
+
+        const { gameId, word, number } = data;
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            socket.emit('game:error', 'Game not found');
+            return;
+        }
+
+        const clueResult = game.giveClue(user.id, word, number);
+        if (clueResult) {
+            const gameState = game.getGame();
+            io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
+            io.to(gameId.toUpperCase()).emit('game:clue-given', gameState.currentClue);
+        } else {
+            socket.emit('game:error', 'Failed to give clue');
+        }
+    });
+
+    socket.on('game:reveal-card', (data: { gameId: string; cardId: string }) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('game:error', 'Not authenticated');
+            return;
+        }
+
+        const { gameId, cardId } = data;
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            socket.emit('game:error', 'Game not found');
+            return;
+        }
+
+        const result = game.revealCard(user.id, cardId);
+        if (result.success) {
+            const gameState = game.getGame();
+            io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
+            
+            if (result.card) {
+                io.to(gameId.toUpperCase()).emit('game:card-revealed', result.card);
+            }
+            
+            if (result.gameEnded && result.winner) {
+                io.to(gameId.toUpperCase()).emit('game:game-ended', result.winner);
+            }
+        } else {
+            socket.emit('game:error', 'Failed to reveal card');
+        }
+    });
+
+    socket.on('game:end-turn', (data: { gameId: string }) => {
+        const user = connectedUsers.get(socket.id);
+        if (!user) {
+            socket.emit('game:error', 'Not authenticated');
+            return;
+        }
+
+        const { gameId } = data;
+        const game = gameService.getGameByCode(gameId.toUpperCase());
+        if (!game) {
+            socket.emit('game:error', 'Game not found');
+            return;
+        }
+
+        const turnResult = game.endTurn();
+        if (turnResult) {
+            const gameState = game.getGame();
+            io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
+            io.to(gameId.toUpperCase()).emit('game:turn-changed', gameState.currentTurn);
+        } else {
+            socket.emit('game:error', 'Failed to end turn');
+        }
+    });
+
+    // Handle disconnection
+    socket.on('disconnect', () => {
+        const user = connectedUsers.get(socket.id);
+        if (user) {
+            console.log('📡 Socket disconnected:', socket.id, user.username);
+
+            // Remove from global room
+            const globalRoom = getOrCreateGlobalRoom();
+            userRooms.delete(socket.id);
+            globalRoom.users.delete(socket.id);
+
+            // Notify others
+            socket.to('GLOBAL').emit('user-left', {
+                user: user,
+                message: `${user.username} left the chat`,
+            });
+
+            // Update room users
+            const roomUsers = Array.from(globalRoom.users.values());
+            io.to('GLOBAL').emit('room-users', { users: roomUsers });
+
+            connectedUsers.delete(socket.id);
+        } else {
+            console.log('📡 Socket disconnected:', socket.id, '(unauthenticated)');
+        }
+    });
+};
+
+
+============================================================
+FILE: backend/src/services/gameService.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\services\gameService.ts
+SIZE: 19225 characters
+============================================================
+// Game Service - Manages games and integrates with existing storage
+import { CodenamesGameModel } from '../models/Game';
+import { CodenamesGame, TeamColor, PlayerRole, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, isSoloMode } from '../../../shared/types/game';
+
+interface GameWithMeta {
+  model: CodenamesGameModel;
+  lastActivity: Date;
+}
+
+export class GameService {
+  private games: Map<string, GameWithMeta> = new Map();
+  public playerGameMap: Map<string, string> = new Map(); // playerId -> gameId
+  private gameCodes: Map<string, string> = new Map(); // gameCode -> gameId mapping
+  // 🔐 NEW: Persistent user-game authorization tracking
+  private userGameAuth: Map<string, Set<string>> = new Map(); // userId -> Set<gameId>
+  private gameUserAuth: Map<string, Set<string>> = new Map(); // gameId -> Set<userId>
+
+  // Game code management methods
+  generateGameCode(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    
+    // Ensure code is unique
+    if (this.gameCodes.has(code)) {
+      return this.generateGameCode(); // Try again
+    }
+    
+    return code;
+  }
+
+  createGameWithCode(gameCode: string, creatorId: string): CodenamesGameModel {
+    // Remove any existing game with this code
+    this.removeGameByCode(gameCode);
+
+    const gameModel = new CodenamesGameModel(gameCode);
+    this.games.set(gameModel.getId(), {
+      model: gameModel,
+      lastActivity: new Date()
+    });
+    
+    // 🔧 FIX: Map the game code to the game ID for lookup
+    this.gameCodes.set(gameCode, gameModel.getId());
+    console.log(`🔧 [GAMESERVICE] Mapped code ${gameCode} to game ID ${gameModel.getId()}`);
+
+    console.log(`🔍 [GAMESERVICE] Created game: ID=${gameModel.getId()}, Code=${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Games map now has ${this.games.size} games`);
+
+    console.log(`🎮 [GAMESERVICE] Created game ${gameModel.getId()} for room ${gameCode}`);
+    
+    // Map the game code to the game ID
+    this.gameCodes.set(gameCode, gameModel.getId());
+    
+    console.log(`Created game with code ${gameCode} and ID ${gameModel.getId()}`);
+    return gameModel;
+  }
+
+  getGameByCode(gameCode: string): CodenamesGameModel | null {
+    console.log(`🔍 [GAMESERVICE] Looking for game with code: ${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Current games map size: ${this.games.size}`);
+    console.log(`🔍 [GAMESERVICE] Current gameCodes map size: ${this.gameCodes?.size || 0}`);
+    console.log(`🔍 [GAMESERVICE] GameCodes map contents:`, Array.from(this.gameCodes.entries()));
+        console.log(`🔍 [GAMESERVICE] getGameByCode called with: ${gameCode}`);
+    // 🔧 Ensure gameCodes map exists
+    if (!this.gameCodes) {
+      console.log('🔧 [GAMESERVICE] GameCodes map not initialized, creating...');
+      this.gameCodes = new Map();
+    }
+    
+    const gameId = this.gameCodes.get(gameCode);
+    console.log(`🔍 [GAMESERVICE] GameCode lookup: ${gameCode} -> ${gameId || 'NOT FOUND'}`);
+    if (!gameId) return null;
+    
+    const gameWithMeta = this.games.get(gameId);
+    if (gameWithMeta) {
+      gameWithMeta.lastActivity = new Date();
+      return gameWithMeta.model;
+    }
+    return null;
+  }
+
+  addPlayerToGameByCode(gameCode: string, playerId: string, username: string, socketId: string): boolean {
+    const game = this.getGameByCode(gameCode);
+    if (!game) return false;
+
+    // Remove player from any existing game first
+    this.removePlayerFromAllGames(playerId);
+
+    const success = game.addPlayer(playerId, username, socketId);
+    if (success) {
+      this.playerGameMap.set(playerId, game.getId());
+    }
+    return success;
+  }
+
+  removeGameByCode(gameCode: string): boolean {
+    // 🔧 Ensure gameCodes map exists
+    if (!this.gameCodes) {
+      console.log('🔧 [GAMESERVICE] GameCodes map not initialized, creating...');
+      this.gameCodes = new Map();
+    }
+    
+    const gameId = this.gameCodes.get(gameCode);
+    console.log(`🔍 [GAMESERVICE] GameCode lookup: ${gameCode} -> ${gameId || 'NOT FOUND'}`);
+    if (gameId) {
+      this.gameCodes.delete(gameCode);
+      return this.deleteGame(gameId);
+    }
+    return false;
+  }
+
+
+  // 🔐 User-Game Authorization Methods
+  authorizeUserForGame(userId: string, gameId: string): void {
+    console.log(`🔐 Authorizing user ${userId} for game ${gameId}`);
+    
+    // Add user to game's authorized users
+    if (!this.gameUserAuth.has(gameId)) {
+      this.gameUserAuth.set(gameId, new Set());
+    }
+    this.gameUserAuth.get(gameId)!.add(userId);
+    
+    // Add game to user's authorized games
+    if (!this.userGameAuth.has(userId)) {
+      this.userGameAuth.set(userId, new Set());
+    }
+    this.userGameAuth.get(userId)!.add(gameId);
+    
+    console.log(`✅ User ${userId} now authorized for game ${gameId}`);
+  }
+
+  isUserAuthorizedForGame(userId: string, gameId: string): boolean {
+    const authorized = this.gameUserAuth.get(gameId)?.has(userId) || false;
+    console.log(`🔍 Checking authorization: User ${userId} for game ${gameId} = ${authorized}`);
+    return authorized;
+  }
+
+  getUserAuthorizedGames(userId: string): string[] {
+    const games = Array.from(this.userGameAuth.get(userId) || []);
+    console.log(`🔍 User ${userId} authorized for games:`, games);
+    return games;
+  }
+
+  removeUserGameAuthorization(userId: string, gameId: string): void {
+    console.log(`🔐 Removing authorization: User ${userId} from game ${gameId}`);
+    
+    this.gameUserAuth.get(gameId)?.delete(userId);
+    this.userGameAuth.get(userId)?.delete(gameId);
+    
+    // Clean up empty sets
+    if (this.gameUserAuth.get(gameId)?.size === 0) {
+      this.gameUserAuth.delete(gameId);
+    }
+    if (this.userGameAuth.get(userId)?.size === 0) {
+      this.userGameAuth.delete(userId);
+    }
+  }
+
+  // Get user's current active game (for auto-rejoin)
+  getUserCurrentGame(userId: string): CodenamesGameModel | null {
+    const authorizedGames = this.getUserAuthorizedGames(userId);
+    
+    // Find the most recent active game
+    for (const gameId of authorizedGames) {
+      const game = this.getGame(gameId);
+      if (game && game.getStatus() !== 'finished') {
+        console.log(`🎮 Found active game for user ${userId}: ${gameId}`);
+        return game;
+      }
+    }
+    
+    console.log(`🔍 No active game found for user ${userId}`);
+    return null;
+  }
+
+  // Existing game lifecycle methods
+  createGameForRoom(gameCode: string): CodenamesGameModel {
+    // Check if game already exists - don't delete it!
+    const existingGame = this.getGameForRoom(gameCode);
+    if (existingGame) {
+      console.log(`⚠️  Game already exists for room ${gameCode}, returning existing game`);
+      return existingGame;
+    }
+
+    console.log(`🎮 Creating new game for room: ${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] createGameForRoom called with: ${gameCode}`);
+    const gameModel = new CodenamesGameModel(gameCode);
+    this.games.set(gameModel.getId(), {
+      model: gameModel,
+      lastActivity: new Date()
+    });
+    
+    // 🔧 FIX: Map the game code to the game ID for lookup
+    this.gameCodes.set(gameCode, gameModel.getId());
+    console.log(`🔧 [GAMESERVICE] Mapped code ${gameCode} to game ID ${gameModel.getId()}`);
+
+    console.log(`🔍 [GAMESERVICE] Created game: ID=${gameModel.getId()}, Code=${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Games map now has ${this.games.size} games`);
+
+    console.log(`🎮 [GAMESERVICE] Created game ${gameModel.getId()} for room ${gameCode}`);
+
+    return gameModel;
+  }
+
+  // Method to explicitly create a fresh game (for reset/restart scenarios)
+  createFreshGameForRoom(gameCode: string): CodenamesGameModel {
+    console.log(`🎮 Creating fresh game for room: ${gameCode} (deleting any existing)`);
+    this.deleteGameForRoom(gameCode);
+
+    const gameModel = new CodenamesGameModel(gameCode);
+    this.games.set(gameModel.getId(), {
+      model: gameModel,
+      lastActivity: new Date()
+    });
+    
+    // 🔧 FIX: Map the game code to the game ID for lookup
+    this.gameCodes.set(gameCode, gameModel.getId());
+    console.log(`🔧 [GAMESERVICE] Mapped code ${gameCode} to game ID ${gameModel.getId()}`);
+
+    console.log(`🔍 [GAMESERVICE] Created game: ID=${gameModel.getId()}, Code=${gameCode}`);
+    console.log(`🔍 [GAMESERVICE] Games map now has ${this.games.size} games`);
+
+    console.log(`🎮 [GAMESERVICE] Created game ${gameModel.getId()} for room ${gameCode}`);
+
+    return gameModel;
+  }
+
+  getGame(gameId: string): CodenamesGameModel | null {
+    const gameWithMeta = this.games.get(gameId);
+    if (gameWithMeta) {
+      gameWithMeta.lastActivity = new Date();
+      return gameWithMeta.model;
+    }
+    return null;
+  }
+
+  getGameForRoom(gameCode: string): CodenamesGameModel | null {
+    for (const [gameId, gameWithMeta] of this.games.entries()) {
+      if (gameWithMeta.model.getGameCode() === gameCode) {
+        gameWithMeta.lastActivity = new Date();
+        return gameWithMeta.model;
+      }
+    }
+    return null;
+  }
+
+  getGameByPlayer(playerId: string): CodenamesGameModel | null {
+    const gameId = this.playerGameMap.get(playerId);
+    if (gameId) {
+      return this.getGame(gameId);
+    }
+    return null;
+  }
+
+  deleteGame(gameId: string): boolean {
+    const gameWithMeta = this.games.get(gameId);
+    if (gameWithMeta) {
+      // Remove all players from the player map using new helper
+      const game = gameWithMeta.model.getGame();
+      const allPlayers = getAllPlayers(game);
+      allPlayers.forEach((player: any) => {
+        this.playerGameMap.delete(player.id);
+      });
+      
+      // Remove from game codes mapping
+      for (const [code, id] of this.gameCodes.entries()) {
+        if (id === gameId) {
+          this.gameCodes.delete(code);
+          break;
+        }
+      }
+      
+      // 🔐 Clean up user authorizations for this game
+      const authorizedUsers = this.gameUserAuth.get(gameId) || new Set();
+      for (const userId of authorizedUsers) {
+        this.removeUserGameAuthorization(userId, gameId);
+      }
+      
+      this.games.delete(gameId);
+      return true;
+    }
+    return false;
+  }
+
+  deleteGameForRoom(gameCode: string): boolean {
+    for (const [gameId, gameWithMeta] of this.games.entries()) {
+      if (gameWithMeta.model.getGameCode() === gameCode) {
+        return this.deleteGame(gameId);
+      }
+    }
+    return false;
+  }
+
+  // Player management
+  addPlayerToGame(gameId: string, playerId: string, username: string, socketId: string): boolean {
+    console.log(`🎯 [ADDPLAYER] Adding ${username} (${playerId}) to game ${gameId}`);
+    
+    const game = this.getGame(gameId);
+    if (!game) {
+      console.log(`❌ [ADDPLAYER] Game ${gameId} not found`);
+      return false;
+    }
+
+    // Check if player is already in THIS game
+    const currentGame = this.getGameByPlayer(playerId);
+    if (currentGame && currentGame.getId() === gameId) {
+      console.log(`ℹ️  [ADDPLAYER] ${username} already in game ${gameId}`);
+      return true; // Already in the correct game
+    }
+
+    // Remove player from any other game first
+    if (currentGame && currentGame.getId() !== gameId) {
+      console.log(`🔄 [ADDPLAYER] Moving ${username} from game ${currentGame.getId()} to ${gameId}`);
+      this.removePlayerFromAllGames(playerId);
+    }
+
+    const success = game.addPlayer(playerId, username, socketId);
+    if (success) {
+      this.playerGameMap.set(playerId, gameId);
+      // 🔐 Authorize user for this game
+      this.authorizeUserForGame(playerId, gameId);
+      console.log(`✅ [ADDPLAYER] Successfully added ${username} to game ${gameId}`);
+    } else {
+      console.log(`❌ [ADDPLAYER] Failed to add ${username} to game ${gameId}`);
+    }
+    
+    return success;
+  }
+
+  removePlayerFromAllGames(playerId: string): boolean {
+    const game = this.getGameByPlayer(playerId);
+    if (game) {
+      const success = game.removePlayer(playerId);
+      if (success) {
+        this.playerGameMap.delete(playerId);
+        // Note: Keep game authorization for potential reconnection
+        // this.removeUserGameAuthorization(playerId, gameState.id);
+        
+        // Don't immediately delete empty games - they might be rejoined
+        const gameState = game.getGame();
+        const allPlayers = getAllPlayers(gameState);
+        if (allPlayers.length === 0) {
+          console.log(`🎯 Game ${gameState.id} is now empty but keeping it alive for potential reconnection`);
+          // this.deleteGame(gameState.id); // Commented out - let cleanupInactiveGames handle this later
+        }
+      }
+      return success;
+    }
+    return false;
+  }
+
+  updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
+    const game = this.getGameByPlayer(playerId);
+    if (game) {
+      return game.updatePlayerOnlineStatus(playerId, isOnline);
+    }
+    return false;
+  }
+
+  assignPlayerToTeam(playerId: string, team: TeamColor, role: PlayerRole): { success: boolean; error?: string } {
+    console.log(`🎯 [GAMESERVICE] assignPlayerToTeam called for player ${playerId} to join ${team} as ${role}`);
+    
+    const game = this.getGameByPlayer(playerId);
+    if (!game) {
+      console.log(`❌ [GAMESERVICE] Player ${playerId} not found in any game`);
+      console.log(`🎯 [GAMESERVICE] Current player-game mappings:`, Array.from(this.playerGameMap.entries()));
+      return { success: false, error: 'Player not in any game' };
+    }
+
+    console.log(`🎯 [GAMESERVICE] Found game ${game.getId()} for player ${playerId}`);
+    const preState = game.getGame();
+    const preAllPlayers = getAllPlayers(preState);
+    console.log(`🎯 [GAMESERVICE] Pre-assignment game state:`, preAllPlayers.map(p => `${p.username}(${getPlayerTeam(preState, p.id)}/${getPlayerRole(preState, p.id)})`));
+    
+    const success = game.assignPlayerToTeam(playerId, team, role);
+    
+    const postState = game.getGame();
+    const postAllPlayers = getAllPlayers(postState);
+    console.log(`🎯 [GAMESERVICE] Post-assignment game state:`, postAllPlayers.map(p => `${p.username}(${getPlayerTeam(postState, p.id)}/${getPlayerRole(postState, p.id)})`));
+    console.log(`🎯 [GAMESERVICE] Assignment result: ${success}`);
+    
+    return { 
+      success, 
+      error: success ? undefined : 'Cannot assign to team - team may already have a spymaster or operatives need a spymaster first' 
+    };
+  }
+
+  // Game actions
+  startGame(playerId: string): { success: boolean; error?: string } {
+    console.log('🎯 [GAMESERVICE] startGame called for player:', playerId);
+    
+    const game = this.getGameByPlayer(playerId);
+    console.log('🎯 [GAMESERVICE] Game found for player:', !!game);
+    
+    if (!game) {
+      console.log('❌ [GAMESERVICE] Player not in any game');
+      // Log current player-game mappings for debugging
+      console.log('🎯 [GAMESERVICE] Current player mappings:');
+      for (const [pid, gid] of this.playerGameMap.entries()) {
+        console.log(`  Player ${pid} -> Game ${gid}`);
+      }
+      return { success: false, error: 'Player not in any game' };
+    }
+
+    console.log('🎯 [GAMESERVICE] Checking if game can start...');
+    const canStart = game.canStartGame();
+    console.log('🎯 [GAMESERVICE] Can start result:', canStart);
+    
+    if (!canStart) {
+      return { success: false, error: 'Cannot start game - need at least one complete team (spymaster + operatives)' };
+    }
+
+    console.log('🎯 [GAMESERVICE] Starting game...');
+    const success = game.startGame();
+    console.log('🎯 [GAMESERVICE] Start game result:', success);
+    
+    return { success, error: success ? undefined : 'Failed to start game' };
+  }
+
+  giveClue(playerId: string, word: string, number: number): { success: boolean; error?: string } {
+    const game = this.getGameByPlayer(playerId);
+    if (!game) {
+      return { success: false, error: 'Player not in any game' };
+    }
+
+    const success = game.giveClue(playerId, word, number);
+    return { 
+      success, 
+      error: success ? undefined : 'Cannot give clue - must be the current team spymaster' 
+    };
+  }
+
+  revealCard(playerId: string, cardId: string): { success: boolean; error?: string; card?: any; gameEnded?: boolean; winner?: TeamColor } {
+    const game = this.getGameByPlayer(playerId);
+    if (!game) {
+      return { success: false, error: 'Player not in any game' };
+    }
+
+    const result = game.revealCard(playerId, cardId);
+    if (!result.success) {
+      return { success: false, error: 'Cannot reveal card - must be current team operative with guesses remaining' };
+    }
+
+    return result;
+  }
+
+  endTurn(playerId: string): { success: boolean; error?: string } {
+    const game = this.getGameByPlayer(playerId);
+    if (!game) {
+      return { success: false, error: 'Player not in any game' };
+    }
+
+    const success = game.endTurn();
+    return { 
+      success, 
+      error: success ? undefined : 'Cannot end turn' 
+    };
+  }
+
+  resetGame(playerId: string): { success: boolean; error?: string } {
+    const game = this.getGameByPlayer(playerId);
+    if (!game) {
+      return { success: false, error: 'Player not in any game' };
+    }
+
+    game.resetGame();
+    return { success: true };
+  }
+
+  // Utility methods
+  getStats(): { totalGames: number; activePlayers: number; gameCodes: number } {
+    return {
+      totalGames: this.games.size,
+      activePlayers: this.playerGameMap.size,
+      gameCodes: this.gameCodes.size
+    };
+  }
+
+  // Get all active games for the games list API
+  getAllActiveGames(): Array<{
+    code: string;
+    id: string;
+    status: string;
+    playerCount: number;
+    players: string[];
+    createdAt: string;
+    lastActivity: string;
+  }> {
+    const activeGames: any[] = [];
+    
+    // Iterate over ALL games (not just gameCodes) to catch games created via createGameForRoom
+    for (const [gameId, gameWithMeta] of this.games.entries()) {
+      const gameState = gameWithMeta.model.getGame();
+      
+      // Use roomCode as the display code (works for both room-based and code-based games)
+      const displayCode = gameState.gameCode || gameId.substring(0, 6).toUpperCase();
+      
+      // Get all players using new helper function
+      const allPlayers = getAllPlayers(gameState);
+      
+      activeGames.push({
+        code: displayCode,
+        id: gameState.id,
+        status: gameState.status,
+        playerCount: allPlayers.length,
+        players: allPlayers.map((p: any) => p.username),
+        createdAt: gameState.createdAt || new Date().toISOString(),
+        lastActivity: gameWithMeta.lastActivity.toISOString()
+      });
+    }
+    
+    // Sort by most recent activity
+    return activeGames.sort((a, b) => 
+      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
+    );
+  }
+
+  // Cleanup inactive games
+  cleanupInactiveGames(maxInactiveMinutes: number = 60): number {
+    const cutoffTime = new Date(Date.now() - maxInactiveMinutes * 60 * 1000);
+    let cleanedCount = 0;
+
+    for (const [gameId, gameWithMeta] of this.games.entries()) {
+      if (gameWithMeta.lastActivity < cutoffTime) {
+        this.deleteGame(gameId);
+        cleanedCount++;
+      }
+    }
+
+    return cleanedCount;
+  }
+}
+
+// Singleton instance for use in socket handlers
+export const gameService = new GameService();
+
+
+============================================================
+FILE: backend/src/routes/games.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\routes\games.ts
+SIZE: 7284 characters
+============================================================
+import express, { Request, Response } from 'express';
+import { gameService } from '../services/gameService';
+
+const router = express.Router();
+
+// Test endpoint
+router.get('/test', (req: Request, res: Response): void => {
+  console.log('🧪 API test endpoint hit!');
+  res.json({ 
+    success: true, 
+    message: 'Games API is working!',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// List all active games - using gameService
+router.get('/', (req: Request, res: Response): void => {
+  try {
+    console.log('📋 GET /api/games - Listing all games...');
+    
+    const stats = gameService.getStats();
+    const activeGames = gameService.getAllActiveGames();
+    
+    console.log(`📤 Found ${stats.totalGames} active games`);
+    
+    res.json({
+      success: true,
+      games: activeGames, // Return actual active games
+      total: stats.totalGames,
+      stats: stats,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error listing games:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to list games',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Get game info by code - using gameService
+router.get('/:gameCode', (req: Request, res: Response): void => {
+  try {
+    const { gameCode } = req.params;
+    console.log(`🔍 GET /api/games/${gameCode} - Getting game info...`);
+    
+    if (!gameCode) {
+      res.status(400).json({ 
+        success: false,
+        error: 'Game code is required' 
+      });
+      return;
+    }
+    
+    let game = gameService.getGameByCode(gameCode.toUpperCase());
+    
+    // Fallback: try getGameForRoom if getGameByCode fails (for lobby-created games)
+    if (!game) {
+      console.log(`Game ${gameCode} not found via getGameByCode, trying getGameForRoom...`);
+      game = gameService.getGameForRoom(gameCode.toUpperCase());
+      
+      if (game) {
+        console.log(`Found game ${gameCode} via getGameForRoom, repairing mapping...`);
+        // Fix the mapping for future requests
+        (gameService as any).gameCodes.set(gameCode.toUpperCase(), game.getId());
+      }
+    }
+    
+    if (game) {
+      const gameState = game.getGame();
+      
+      
+      
+      
+      
+      // Return full game state for GameBoard component
+      const responseData = { 
+        success: true, 
+        game: {
+          ...gameState,  // Include ALL game state data
+          code: gameCode.toUpperCase(),  // Ensure code is uppercase
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      
+      res.json(responseData);
+    } else {
+      res.status(404).json({ 
+        success: false,
+        error: 'Game not found' 
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in /api/games/:gameCode:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to get game info',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Create a new game - using gameService
+router.post('/create', (req: Request, res: Response): void => {
+  try {
+    console.log('🎮 POST /api/games/create - Creating new game...');
+    
+    const { userId, username } = req.body;
+    
+    // Generate game code using gameService
+    const gameCode = gameService.generateGameCode();
+    
+    // Create game using gameService
+    const game = gameService.createGameWithCode(gameCode, userId || 'anonymous');
+    
+    // Add creator if provided
+    if (username && userId) {
+      gameService.addPlayerToGameByCode(gameCode, userId, username, '');
+    }
+    
+    console.log(`✅ Created game: ${gameCode}`);
+    
+    res.json({ 
+      success: true, 
+      gameCode: gameCode,
+      message: 'Game created successfully!',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error creating game:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to create game',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Join an existing game - using gameService
+router.post('/join', (req: Request, res: Response): void => {
+  try {
+    const { gameCode, userId, username } = req.body;
+    console.log(`🚪 User ${username} joining game: ${gameCode}`);
+    
+    if (!gameCode) {
+      res.status(400).json({ 
+        success: false,
+        error: 'Game code is required' 
+      });
+      return;
+    }
+    
+    let game = gameService.getGameByCode(gameCode.toUpperCase());
+    
+    // Fallback: try getGameForRoom if getGameByCode fails (for lobby-created games)
+    if (!game) {
+      console.log(`Game ${gameCode} not found via getGameByCode, trying getGameForRoom...`);
+      game = gameService.getGameForRoom(gameCode.toUpperCase());
+      
+      if (game) {
+        console.log(`Found game ${gameCode} via getGameForRoom, repairing mapping...`);
+        // Fix the mapping for future requests
+        (gameService as any).gameCodes.set(gameCode.toUpperCase(), game.getId());
+      }
+    }
+    
+    if (!game) {
+      res.status(404).json({ 
+        success: false,
+        error: 'Game not found' 
+      });
+      return;
+    }
+    
+    // Add player to game using gameService
+    if (username && userId) {
+      const success = gameService.addPlayerToGameByCode(gameCode.toUpperCase(), userId, username, '');
+      
+      if (success) {
+        console.log(`✅ Added ${username} to game ${gameCode}`);
+      } else {
+        console.log(`ℹ️ ${username} already in game ${gameCode}`);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      gameCode: gameCode.toUpperCase(),
+      message: 'Joined game successfully!',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error joining game:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to join game',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+
+
+
+
+
+// 🔐 Check if user has access to a specific game
+router.get('/:gameId/access', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { gameId } = req.params;
+    
+    if (!gameId) {
+      res.status(400).json({
+        success: false,
+        error: 'Game ID is required'
+      });
+      return;
+    }
+    
+    console.log('🔐 [API] Checking access for game:', gameId.toUpperCase());
+    
+    // Check if game exists first
+    const game = gameService.getGameByCode(gameId.toUpperCase());
+    
+    if (!game) {
+      console.log('❌ [API] Game not found:', gameId.toUpperCase());
+      res.status(404).json({
+        success: false,
+        error: 'Game not found',
+        code: 'GAME_NOT_FOUND'
+      });
+      return;
+    }
+    
+    // For now, if the game exists, allow access
+    // The real authorization checking happens at the socket level
+    console.log('✅ [API] Game exists, allowing access');
+    
+    res.json({
+      success: true,
+      authorized: true,
+      game: game.getGame(),
+      message: 'Game access granted'
+    });
+    
+  } catch (error) {
+    console.error('❌ [API] Error checking game access:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check game access',
+      code: 'SERVER_ERROR'
+    });
+  }
+});
+
+export default router;
+
+
+============================================================
+FILE: frontend/src/pages/GamePage.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\GamePage.tsx
+SIZE: 19536 characters
 ============================================================
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-
-interface GameLobbyListItem {
-  code: string;
-  id: string;
-  status: string;
-  playerCount: number;
-  players: string[];
-  ownerUsername: string;
-  createdAt: string;
-  lastActivity: string;
-}
-
-interface GamesListProps {
-  className?: string;
-}
-
-// 🔒 Note: Closed lobbies are automatically filtered out by the backend API
-// Only 'waiting' lobbies appear in this list
-
-const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
-  // Games list state
-  const [lobbyCode, setLobbyCode] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [isJoining, setIsJoining] = useState(false);
-  const [error, setError] = useState('');
-  const [gameLobbies, setGameLobbies] = useState<GameLobbyListItem[]>([]);
-  const [isLoadingLobbies, setIsLoadingLobbies] = useState(false);
-  const navigate = useNavigate();
-
-  // Load game lobbies from backend
-  const loadGameLobbiesList = async () => {
-    try {
-      setIsLoadingLobbies(true);
-      setError('');
-      const response = await fetch('/api/gameLobbies');
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        setGameLobbies(data.gameLobbies || []);
-      } else {
-        throw new Error(data.error || 'Failed to load game lobbies');
-      }
-    } catch (err) {
-      console.error('❌ Error loading game lobbies:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load game lobbies');
-      setGameLobbies([]);
-    } finally {
-      setIsLoadingLobbies(false);
-    }
-  };
-
-  // Create a new game lobby
-  const handleCreateGameLobby = async () => {
-    try {
-      setIsCreating(true);
-      setError('');
-      
-      // Get user info from localStorage (assuming auth service stores it there)
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      
-      const response = await fetch('/api/gameLobbies/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: user?.id || 'anonymous',
-          username: user?.username || 'Anonymous'
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        navigate(`/lobby/${data.lobbyCode}`);
-      } else {
-        throw new Error(data.error || 'Failed to create game lobby');
-      }
-    } catch (err) {
-      console.error('❌ Error creating game lobby:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create game lobby');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  // Join game with code input
-  const handleJoinGameLobby = async () => {
-    if (!lobbyCode.trim()) return;
-    
-    try {
-      setIsJoining(true);
-      setError('');
-      
-      // Get user info from localStorage
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      
-      const response = await fetch('/api/gameLobbies/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          lobbyCode: lobbyCode.trim().toUpperCase(),
-          userId: user?.id || 'anonymous',
-          username: user?.username || 'Anonymous'
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        navigate(`/lobby/${data.lobbyCode}`);
-      } else {
-        throw new Error(data.error || 'Failed to join game lobby');
-      }
-    } catch (err) {
-      console.error('❌ Error joining game lobby:', err);
-      setError(err instanceof Error ? err.message : 'Failed to join game lobby');
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  // Join game from lobby list
-  const handleJoinGameFromList = async (code: string) => {
-    if (!code.trim()) return;
-    
-    try {
-      setIsJoining(true);
-      setError('');
-      
-      // Get user info from localStorage
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      
-      const response = await fetch('/api/gameLobbies/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          lobbyCode: code.trim().toUpperCase(),
-          userId: user?.id || 'anonymous',
-          username: user?.username || 'Anonymous'
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        navigate(`/lobby/${data.lobbyCode}`);
-      } else {
-        throw new Error(data.error || 'Failed to join game lobby');
-      }
-    } catch (err) {
-      console.error('❌ Error joining game lobby:', err);
-      setError(err instanceof Error ? err.message : 'Failed to join game lobby');
-    } finally {
-      setIsJoining(false);
-    }
-  };
-
-  // Handle lobby code input change
-  const handleLobbyCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.toUpperCase().slice(0, 6);
-    setLobbyCode(value);
-  };
-
-  // Load game lobbies list on component mount and refresh periodically
-  useEffect(() => {
-    loadGameLobbiesList();
-    
-    // Refresh lobbies list every 10 seconds
-    const interval = setInterval(loadGameLobbiesList, 10000);
-    
-    // Return cleanup function - NOT JSX!
-    return () => clearInterval(interval);
-  }, []);
-
-  // Main component return - THIS is where the JSX goes!
-  return (
-    <div className={`${className}`}>
-      <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-lg sm:rounded-2xl shadow-2xl border border-slate-600/50 p-3 sm:p-6 lg:p-8 backdrop-blur-lg lg:h-[80vh] flex flex-col lg:flex-row lg:gap-8">
-
-        {/* Error Display */}
-        {error && (
-          <div className="mb-6 lg:mb-0 lg:absolute lg:top-4 lg:left-4 lg:right-4 lg:z-10 p-4 bg-red-900/50 border border-red-500/50 rounded-lg">
-            <p className="text-red-200">{error}</p>
-          </div>
-        )}
-
-        {/* Left Column: Create Game & Join with Code (Desktop) */}
-        <div className="lg:w-80 lg:flex-shrink-0 flex flex-col space-y-6">
-          {/* Create New Game Button */}
-          <div>
-            <button 
-              onClick={handleCreateGameLobby}
-              disabled={isCreating}
-              className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-3 px-6 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-emerald-500/25 text-lg"
-            >
-              {isCreating ? (
-                <span className="flex items-center justify-center">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-3"></div>
-                  Creating Game...
-                </span>
-              ) : (
-                <span className="flex items-center justify-center">
-                  <span className="text-xl mr-2">🎮</span>
-                  Create New Game
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Join with Code */}
-          <div className="border-t border-slate-600/30 pt-6 lg:border-t-0 lg:pt-0">
-            <div className="p-3 sm:p-4 lg:p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-lg sm:rounded-xl">
-              <h4 className="text-base sm:text-lg font-semibold text-slate-100 mb-3 sm:mb-4 flex items-center">
-                <span className="text-xl mr-2">🚪</span>
-                Join with Code
-              </h4>
-              <div className="space-y-3">
-                <input
-                  type="text"
-                  value={lobbyCode}
-                  onChange={handleLobbyCodeChange}
-                  className="w-full px-3 py-2 bg-slate-700/60 border border-slate-500/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 backdrop-blur-sm uppercase text-center font-mono placeholder-slate-400"
-                  placeholder="ABCD12"
-                  maxLength={6}
-                  disabled={isJoining}
-                />
-                <button 
-                  onClick={handleJoinGameLobby}
-                  disabled={isJoining || !lobbyCode.trim()}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-blue-500/25"
-                >
-                  {isJoining ? (
-                    <span className="flex items-center justify-center">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                      Joining...
-                    </span>
-                  ) : (
-                    'Join'
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Active Game Lobbies */}
-        <div className="flex-1 flex flex-col h-auto">
-          <div className="flex justify-between items-center mb-3 sm:mb-4 lg:mb-6">
-            <h3 className="text-lg sm:text-xl font-semibold text-slate-100">Active Game Lobbies</h3>
-            <button 
-              onClick={loadGameLobbiesList}
-              disabled={isLoadingLobbies}
-              className="text-blue-400 hover:text-blue-300 font-medium flex items-center space-x-2 transition-colors duration-200"
-            >
-              <span>{isLoadingLobbies ? '🔄' : '🔄'}</span>
-            </button>
-          </div>
-          
-          <div className="p-2 sm:p-4 lg:p-6 lg:flex-1 lg:overflow-y-auto lg:min-h-0">
-            {gameLobbies.length > 0 ? (
-              <div className="grid gap-4">
-                {gameLobbies.map((lobby) => (
-                  <div key={lobby.code} className="border-2 border-slate-600 rounded-lg bg-slate-800/50 p-3 sm:p-4">
-                    {/* Title Section */}
-                    <div className="flex items-center justify-between mb-3">
-                      {/* Left: User's Game */}
-                      <h3 className="text-lg font-semibold text-slate-100">
-                        {lobby.ownerUsername}'s Game
-                      </h3>
-                      
-                      {/* Right: ID */}
-                      <div className="text-sm text-slate-400 font-mono">
-                        ID:{lobby.code}
-                      </div>
-                    </div>
-
-                    {/* Players Info */}
-                    <div className="text-sm text-slate-300 mb-2 text-left">
-                      <span className="font-medium">Players:</span> {lobby.players.length > 0 ? lobby.players.join(', ') : 'None'}
-                    </div>
-                    
-                    <hr className="border-slate-600 mb-4" />
-                    
-                    {/* Join Game Button */}
-                    <div className="border-2 border-slate-600 rounded">
-                      <button
-                        onClick={() => handleJoinGameFromList(lobby.code)}
-                        className="w-full py-2 px-4 text-slate-300 hover:bg-slate-700/50 transition-all duration-200 font-medium"
-                      >
-                        Join Game
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-20 text-slate-400">
-                <div className="text-5xl mb-4">🎮</div>
-                <p className="text-lg font-semibold text-slate-300">No active game lobbies</p>
-                <p className="text-slate-400 mt-2">Create the first lobby to get started!</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default GamesList;
-
-
-============================================================
-FILE: frontend/src/pages/HomePage.tsx
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\HomePage.tsx
-SIZE: 1866 characters
-============================================================
-import React from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { socketService } from '../services/socketService';
-import ChatRoom from '../components/Chat/ChatRoom';
-import GamesList from '../components/GamesList';
+import { gameService } from '../services/gameService';
+import GameBoard from '../components/GameBoard/GameBoard';
 
-const HomePage: React.FC = () => {
-  return (
-    <div className="pt-16 min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 lg:overflow-hidden relative lg:flex lg:flex-col">
-      {/* Background Pattern - Matching GameBoard */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
-        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+const GamePage: React.FC = () => {
+  const { gameId } = useParams<{ gameId: string }>();
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [gameState, setGameState] = useState<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+    const [isUnauthorized, setIsUnauthorized] = useState(false);
+    const [redirectCountdown, setRedirectCountdown] = useState(5);
+
+  useEffect(() => {
+    if (!gameId) return;
+    
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    setCurrentUser(user);
+    loadGameAndConnect();
+    
+    return () => {
+      gameService.removeAllGameListeners();
+      if (socketService.socket) {
+        socketService.socket.off('game:state-updated');
+        socketService.socket.off('game:clue-given');
+        socketService.socket.off('game:card-revealed');
+        socketService.socket.off('game:turn-changed');
+        socketService.socket.off('game:game-ended');
+      }
+    };
+  }, [gameId]);
+
+
+  const handleManualRejoin = () => {
+    if (gameId && socketService.socket?.connected) {
+      console.log('🔄 Manually requesting rejoin for game:', gameId);
+      socketService.socket.emit('rejoin-game', gameId);
+    }
+  };
+
+  const loadGameAndConnect = async () => {
+    console.log('🎮 [LOAD] Starting loadGameAndConnect for game:', gameId);
+    
+    if (!gameId) {
+      console.log('❌ [LOAD] No game ID provided');
+      setError('No game ID provided');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const token = localStorage.getItem('token');
+      
+      if (!user.username || !token) {
+        console.log('❌ [LOAD] No user or token');
+        setError('Please log in first');
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('🔐 [LOAD] Checking game access authorization...');
+      console.log("🔐 [LOAD] User:", user.username, user.id);
+      console.log("🔐 [LOAD] Token length:", token?.length);
+      
+      // First check if user has access to this game
+      try {
+        const accessResponse = await fetch(`/api/games/${gameId}/access`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        console.log('🔐 [LOAD] Access check status:', accessResponse.status);
+        console.log('🔐 [LOAD] Access response headers:', Object.fromEntries(accessResponse.headers.entries()));
+        
+        if (accessResponse.status === 403) {
+          console.log('❌ [LOAD] User not authorized for this game');
+          setIsUnauthorized(true);
+          setIsLoading(false);
+          return;
+        } else if (accessResponse.status === 404) {
+          console.log('❌ [LOAD] Game not found');
+          setError('Game not found');
+          setIsLoading(false);
+          return;
+        } else if (accessResponse.status === 401) {
+          console.log('❌ [LOAD] Invalid token');
+          setError('Please log in again');
+          setIsLoading(false);
+          return;
+        }
+      } catch (accessError) {
+        console.log('⚠️ [LOAD] Access check failed, trying direct game load');
+      }
+
+            console.log('🔍 [FRONTEND] === GAME LOADING DEBUG ===');
+      console.log('🔍 [FRONTEND] Game ID from URL:', gameId);
+      console.log('🔍 [FRONTEND] User:', user.username, user.id);
+      console.log('🔍 [FRONTEND] Token exists:', !!token);
+      console.log('🔍 [FRONTEND] About to fetch from API...');
+      console.log('📡 [LOAD] Loading game data...');
+      
+      // Load game data
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      try {
+        const gameResponse = await fetch(`/api/games/${gameId}`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+                console.log('🔍 [FRONTEND] API Response details:');
+        console.log('  - Status:', gameResponse.status);
+        console.log('  - Status Text:', gameResponse.statusText);
+        console.log('  - URL:', gameResponse.url);
+        
+        if (!gameResponse.ok) {
+          const errorText = await gameResponse.text();
+          console.log('  - Error body:', errorText);
+        }
+        
+        if (gameResponse.ok) {
+          const gameData = await gameResponse.json();
+          
+          if (gameData.success && gameData.game) {
+            console.log('✅ [LOAD] Game loaded, status:', gameData.game.status);
+            setGameState(gameData.game);
+            setIsLoading(false);
+            
+            // Connect to socket in background
+            console.log('🔌 [LOAD] Starting socket connection...');
+            connectToGame(gameId, token, user).catch((error) => {
+              console.log('⚠️ [LOAD] Socket connection failed:', error);
+            });
+            
+            console.log('✅ [LOAD] Loading complete');
+          } else {
+            throw new Error(gameData.error || 'Failed to load game data');
+          }
+        } else if (gameResponse.status === 404) {
+          console.log('❌ [LOAD] Game not found (404)');
+          setError('Game not found');
+          setIsLoading(false);
+          return;
+        } else {
+          throw new Error(`Server error: ${gameResponse.status}`);
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Request timed out - server may be slow');
+        }
+        throw fetchError;
+      }
+      
+    } catch (err: any) {
+      console.error('❌ [LOAD] Error in loadGameAndConnect:', err);
+      setError(err.message || 'Unable to connect to game');
+      setIsLoading(false);
+    }
+  };
+
+  const connectToGame = async (gameId: string, token: string, user: any): Promise<void> => {
+    console.log('🔌 [SOCKET] Starting connectToGame...');
+    
+    return new Promise<void>((resolve) => {
+      // Shorter timeout for better UX - 2 seconds max
+      const connectionTimeout = setTimeout(() => {
+        console.log('⏰ [SOCKET] Quick timeout, continuing without waiting');
+        resolve(); // Always resolve to continue loading
+      }, 2000); // Reduced from 5000 to 2000
+      
+      if (!socketService.socket?.connected) {
+        console.log('❌ [SOCKET] No socket connection, continuing anyway');
+        clearTimeout(connectionTimeout);
+        resolve(); // Don't block the game start
+        return;
+      }
+
+      const handleAuth = () => {
+        console.log('✅ [SOCKET] Authentication successful, joining game...');
+        socketService.socket?.emit('join-game', gameId);
+        setIsConnected(true);
+        setupGameListeners();
+        clearTimeout(connectionTimeout);
+        resolve();
+      };
+
+      const handleAuthFailed = (data: any) => {
+        console.log('❌ [SOCKET] Authentication failed, continuing anyway:', data.error);
+        clearTimeout(connectionTimeout);
+        resolve(); // Don't block the game start
+      };
+
+      // Set up one-time listeners
+      socketService.socket.once('authenticated', (data: any) => {
+        if (data.success) {
+          handleAuth();
+        } else {
+          handleAuthFailed(data);
+        }
+      });
+      
+      console.log('🔑 [SOCKET] Sending authentication...');
+      socketService.authenticate(token);
+      
+      // For game start, resolve immediately if already authenticated
+      if (socketService.isConnected) {
+        console.log('🔌 [SOCKET] Already connected, resolving immediately');
+        clearTimeout(connectionTimeout);
+        handleAuth();
+      }
+    });
+  };
+
+  const setupGameListeners = () => {
+    gameService.removeAllGameListeners();    
+    // 🔐 Socket authorization error handling
+    if (socketService.socket) {
+      socketService.socket.on('game:error', (data: any) => {
+        console.log('🔐 [SOCKET] Game error received:', data);
+        if (data.code === 'NOT_AUTHORIZED') {
+          console.log('❌ [SOCKET] Not authorized for this game');
+          setIsUnauthorized(true);
+          setIsLoading(false);
+        } else {
+          setError(data.error || 'Game error occurred');
+        }
+      });
+    }
+    
+    gameService.onGameStateUpdated((newGameState: any) => {
+      console.log('🎮 Game state updated:', newGameState);
+      
+      // 🔍 DEBUG: Check clue in received game state
+      console.log('🔍 [STATE UPDATE] Current clue in new state:', newGameState.currentClue);
+      console.log('🔍 [STATE UPDATE] Guesses remaining:', newGameState.guessesRemaining);
+      console.log('🔍 [STATE UPDATE] Before setting state, old clue was:', gameState?.currentClue);
+      
+      // 🔍 DEBUG: Check solo mode status
+      console.log('🔍 [SOLO MODE DEBUG] isSoloMode:', newGameState.isSoloMode);
+      console.log('🔍 [SOLO MODE DEBUG] soloTeam:', newGameState.soloTeam);
+      console.log('🔍 [SOLO MODE DEBUG] Red team:', newGameState.redTeam ? 'exists' : 'null');
+      console.log('🔍 [SOLO MODE DEBUG] Blue team:', newGameState.blueTeam ? 'exists' : 'null');
+      
+      setGameState(newGameState);
+      
+      console.log('🔍 [STATE UPDATE] State should now be updated with clue');
+    });
+
+    gameService.onGameError((error: string) => {
+      console.error('🎮 Game error:', error);
+      setError(error);
+      setTimeout(() => setError(''), 3000);
+    });
+    
+    
+    // 🔄 Auto-rejoin event listeners
+    if (socketService.socket) {
+      socketService.socket.on('game:auto-rejoined', (data: any) => {
+        console.log('🔄 Auto-rejoined game:', data.gameCode);
+        console.log('📡 Game state restored:', data.gameState);
+        setGameState(data.gameState);
+        setIsConnected(true);
+      });
+      
+      socketService.socket.on('game:rejoined', (data: any) => {
+        console.log('🔄 Manually rejoined game:', data.gameId);
+        setGameState(data.gameState);
+      });
+    }
+
+    if (socketService.socket) {
+      socketService.socket.on('game:clue-given', (clue: any) => {
+        console.log('💡 Clue given:', clue);
+        console.log('🔍 [CLUE EVENT] Current gameState.currentClue before this event:', gameState?.currentClue);
+        console.log('🔍 [CLUE EVENT] This might be redundant if game:state-updated is working');
+      });
+      
+      socketService.socket.on('game:card-revealed', (card: any) => {
+        console.log('🎯 Card revealed:', card);
+      });
+      
+      socketService.socket.on('game:turn-changed', (newTurn: string) => {
+        console.log('⏭️ Turn changed:', newTurn);
+      });
+      
+      socketService.socket.on('game:game-ended', (winner: string) => {
+        console.log('🏆 Game ended, winner:', winner);
+      });
+    }
+  };
+
+  const getCurrentUserPlayer = () => {
+    if (!gameState || !currentUser) return null;
+    
+    // Check red team spymaster
+    if (gameState.redTeam?.spymaster && 
+        (gameState.redTeam.spymaster.username === currentUser.username || 
+         gameState.redTeam.spymaster.id === currentUser.id)) {
+      return {
+        ...gameState.redTeam.spymaster,
+        team: 'red' as const,
+        role: 'spymaster' as const
+      };
+    }
+    
+    // Check red team operatives
+    if (gameState.redTeam?.operatives) {
+      const redOperative = gameState.redTeam.operatives.find((p: any) => 
+        p.username === currentUser.username || p.id === currentUser.id
+      );
+      if (redOperative) {
+        return {
+          ...redOperative,
+          team: 'red' as const,
+          role: 'operative' as const
+        };
+      }
+    }
+    
+    // Check blue team spymaster
+    if (gameState.blueTeam?.spymaster && 
+        (gameState.blueTeam.spymaster.username === currentUser.username || 
+         gameState.blueTeam.spymaster.id === currentUser.id)) {
+      return {
+        ...gameState.blueTeam.spymaster,
+        team: 'blue' as const,
+        role: 'spymaster' as const
+      };
+    }
+    
+    // Check blue team operatives
+    if (gameState.blueTeam?.operatives) {
+      const blueOperative = gameState.blueTeam.operatives.find((p: any) => 
+        p.username === currentUser.username || p.id === currentUser.id
+      );
+      if (blueOperative) {
+        return {
+          ...blueOperative,
+          team: 'blue' as const,
+          role: 'operative' as const
+        };
+      }
+    }
+    
+    return null;
+  };
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Loading Game...</div>
+          <div className="text-gray-600 mb-6">Game: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{gameId}</span></div>
+          <div className="flex justify-center">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+        </div>
       </div>
+    );
+  }
 
-      <div className="relative z-10 px-2 sm:px-4 lg:px-6 lg:max-w-7xl lg:mx-auto lg:flex-1 lg:flex lg:flex-col lg:h-full lg:py-4">
-        {/* Hero Section with Title */}
-        <div className="text-center mb-2 sm:mb-6 lg:mb-4 px-2 flex-shrink-0">
-          <h1 className="mt-4 text-4xl font-bold bg-gradient-to-r from-blue-400 via-violet-400 to-indigo-400 bg-clip-text text-transparent mb-4 drop-shadow-lg">
-            <span className="sm:hidden">Codenames Online!</span>
-            <span className="hidden sm:inline">Welcome to Codenames Online!</span>
-          </h1>
-          <p className="text-l text-slate-300 max-w-2xl mx-auto hidden sm:block">
-            Play Codenames with your friends online! Create a game lobby or join an existing one to start your spy mission.
-          </p>
+  // Unauthorized Access State
+  if (isUnauthorized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
         </div>
         
-        {/* Games List Component */}
-        <GamesList className="lg:flex-1 lg:min-h-0" />
+        <div className="text-center bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 rounded-2xl shadow-2xl border border-red-500/50 backdrop-blur-lg max-w-md mx-4">
+          <div className="text-red-400 text-4xl font-bold mb-4">🚫</div>
+          <div className="text-red-400 text-2xl font-bold mb-4">Access Denied</div>
+          <div className="text-slate-300 mb-6">
+            <p className="mb-2">You are not authorized to access this game.</p>
+            <p className="text-amber-300 font-mono bg-slate-700/50 px-2 py-1 rounded">Game: {gameId}</p>
+            <p className="mt-4 text-slate-400 text-sm">
+              You can only access games that you have joined or created.
+            </p>
+          </div>
+          
+          {/* Countdown */}
+          <div className="mb-6 p-3 bg-amber-900/30 border border-amber-500/50 rounded-lg">
+            <p className="text-amber-300 text-sm">
+              Redirecting to home in <span className="font-bold text-amber-200">{redirectCountdown}</span> seconds...
+            </p>
+          </div>
+          
+          <div className="space-y-3">
+            <button 
+              onClick={() => navigate('/')}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🏠 Go to Home Now
+            </button>
+            <button 
+              onClick={() => navigate('/lobby')}
+              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🎮 Join a Game
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🔄 Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+    // Error State
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
+          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Game Error</div>
+          <div className="text-gray-600 mb-6">
+            <p>Game: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{gameId}</span></p>
+            <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
+          </div>
+          <div className="space-y-3">
+            <button 
+              onClick={() => navigate('/')}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🏠 Go Back to Home
+            </button>
+            <button 
+              onClick={handleManualRejoin}
+              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🔄 Try to Rejoin Game
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🔄 Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Game State - Render the actual game
+  if (gameState) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+        </div>
+
+        {/* Game Content */}
+        <div className="relative z-10">
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 mx-4 p-4 bg-red-900/50 border border-red-500/50 rounded-lg">
+              <p className="text-red-200">{error}</p>
+            </div>
+          )}
+
+          {/* Game Board */}
+          <GameBoard 
+            gameState={gameState}
+            currentPlayer={getCurrentUserPlayer()}
+            isConnected={isConnected}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback - should not reach here
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center pt-16">
+      <div className="text-center">
+        <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Codenames</div>
+        <p className="text-gray-600">Game not found</p>
       </div>
     </div>
   );
 };
 
-export default HomePage;
+export default GamePage;
+
+
+============================================================
+FILE: frontend/src/services/socketService.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\services\socketService.ts
+SIZE: 4883 characters
+============================================================
+import { io, Socket } from 'socket.io-client';
+
+export interface User {
+  id: string;
+  username: string;
+  socketId?: string;
+}
+
+export interface Room {
+  id: string;
+  name: string;
+  code: string;
+  maxPlayers: number;
+  users: Array<{
+    user: User;
+    role: string;
+    team?: string;
+  }>;
+}
+
+export interface ChatMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: string;
+}
+
+class SocketService {
+  private _socket: Socket | null = null;
+  private token: string | null = null;
+  private isConnecting: boolean = false;
+  private connectionCounter: number = 0;
+  private lastAuthenticatedToken: string | null = null;
+
+  get socket(): Socket | null {
+    return this._socket;
+  }
+
+  connect(): Socket {
+    this.connectionCounter++;
+    console.log('🔌 CONNECT() CALLED #' + this.connectionCounter);
+
+    // Make socket service accessible for debugging
+    (window as any).socketService = this;
+
+    // Check if already connected
+    if (this._socket?.connected) {
+      console.log('📡 Socket already connected, reusing existing connection');
+      return this._socket;
+    }
+
+    // Check if connection is in progress
+    if (this.isConnecting) {
+      console.log('📡 Connection already in progress, waiting...');
+      return this._socket!;
+    }
+
+    // Check if socket exists but is disconnected
+    if (this._socket && !this._socket.connected) {
+      console.log('📡 Reconnecting existing socket');
+      this._socket.connect();
+      return this._socket;
+    }
+
+    console.log('📡 Creating new socket connection');
+    this.isConnecting = true;
+
+    // Dynamic socket URL
+    const currentHost = window.location.hostname;
+    const isLocalhost = currentHost === 'localhost' || currentHost === '127.0.0.1';
+    const socketPort = '3001';
+    
+    let socketUrl;
+    if (import.meta.env.VITE_SOCKET_URL) {
+      socketUrl = import.meta.env.VITE_SOCKET_URL;
+    } else if (isLocalhost) {
+      socketUrl = `http://localhost:${socketPort}`;
+    } else {
+      socketUrl = `http://${currentHost}:${socketPort}`;
+    }
+
+    this._socket = io(socketUrl, {
+      autoConnect: false,
+      transports: ['websocket', 'polling'],
+      timeout: 5000,
+      forceNew: false,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+
+    this.setupEventListeners();
+    this._socket.connect();
+
+    return this._socket;
+  }
+
+  disconnect(): void {
+    if (this._socket) {
+      console.log('📡 Disconnecting socket');
+      this._socket.disconnect();
+      this._socket = null;
+      this.isConnecting = false;
+      this.lastAuthenticatedToken = null;
+    }
+  }
+
+  authenticate(token: string): void {
+    console.log('🔐 [SERVICE] authenticate called, socket connected:', this._socket?.connected);
+    
+    // Prevent duplicate authentication with the same token
+    if (this.lastAuthenticatedToken === token && this._socket?.connected) {
+      console.log('🔐 Already authenticated with this token');
+      this._socket?.emit('authenticated', { success: true, user: { token } });
+      return;
+    }
+    
+    this.token = token;
+    this.lastAuthenticatedToken = token;
+    
+    if (this._socket) {
+      console.log('🔐 Emitting authenticate event to backend');
+      this._socket.emit('authenticate', token);
+    } else {
+      console.log('❌ No socket available for authentication');
+    }
+  }
+
+  // Event listener registration methods
+  onAuthenticated(callback: (data: any) => void): void {
+    this._socket?.on('authenticated', callback);
+  }
+
+  onConnect(callback: () => void): void {
+    this._socket?.on('connect', callback);
+  }
+
+  onDisconnect(callback: () => void): void {
+    this._socket?.on('disconnect', callback);
+  }
+
+  // Cleanup method to remove specific listeners
+  off(event: string, callback?: Function): void {
+    if (callback) {
+      this._socket?.off(event, callback);
+    } else {
+      this._socket?.off(event);
+    }
+  }
+
+  private setupEventListeners(): void {
+    if (!this._socket) return;
+
+    this._socket.on('connect', () => {
+      console.log('✅ Connected to server, Socket ID:', this._socket?.id);
+      this.isConnecting = false;
+    });
+
+    this._socket.on('disconnect', (reason) => {
+      console.log('❌ Disconnected from server. Reason:', reason);
+    });
+
+    this._socket.on('connect_error', (error) => {
+      console.error('🚫 Socket connection error:', error);
+      this.isConnecting = false;
+    });
+  }
+
+  get isConnected(): boolean {
+    return this._socket?.connected || false;
+  }
+
+  get isAuthenticated(): boolean {
+    return !!this.lastAuthenticatedToken && this.isConnected;
+  }
+
+  get isConnectionReady(): boolean {
+    return this._socket?.connected && !this.isConnecting;
+  }
+
+  get socketId(): string | undefined {
+    return this._socket?.id;
+  }
+}
+
+// Export singleton instance
+export const socketService = new SocketService();
+export default socketService;
 
 
 ================================================================================

@@ -107,6 +107,47 @@ class AuthService {
   isAuthenticated(): boolean {
     return !!this.getToken();
   }
+
+  async getUserCurrentGames(): Promise<string[]> {
+    try {
+      const token = this.getToken();
+      if (!token) return [];
+
+      const response = await fetch(`${this.API_URL}/api/auth/user-games`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.games || [];
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error fetching user games:', error);
+      return [];
+    }
+  }
+
+  async validateGameAccess(gameId: string): Promise<boolean> {
+    try {
+      const token = this.getToken();
+      if (!token) return false;
+
+      const response = await fetch(`${this.API_URL}/api/games/${gameId}/access`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      return response.ok && response.status === 200;
+    } catch (error) {
+      console.error('Error validating game access:', error);
+      return false;
+    }
+  }
 }
 
 export const authService = new AuthService();
