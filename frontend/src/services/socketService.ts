@@ -180,6 +180,16 @@ class SocketService {
     }
   }
 
+
+  // Lobby event listeners
+  onLobbyCreated(callback: (data: any) => void): void {
+    this._socket?.on('lobby:created', callback);
+  }
+
+  onLobbyClosed(callback: (data: any) => void): void {
+    this._socket?.on('lobby:closed', callback);
+  }
+
   // Event listener registration methods
   onAuthenticated(callback: (data: any) => void): void {
     this._socket?.on('authenticated', callback);

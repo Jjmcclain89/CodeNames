@@ -487,6 +487,21 @@ export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, 
                     gameId: lobbyId.toUpperCase()
                 });
                 
+                // 🔒 CLOSE LOBBY: Mark lobby as closed now that game has started
+                const lobbyToClose = gameLobbies.get(lobbyId.toUpperCase());
+                if (lobbyToClose) {
+                    lobbyToClose.status = 'closed';
+                    lobbyToClose.updatedAt = new Date().toISOString();
+                    console.log(`🔒 Marked lobby ${lobbyId} as closed after game start`);
+                    
+                    // 📡 BROADCAST: Notify all users that this lobby is now closed
+                    io.to('GLOBAL').emit('lobby:closed', {
+                        lobbyCode: lobbyId.toUpperCase(),
+                        message: `Lobby ${lobbyId} has started a game`
+                    });
+                    console.log(`📡 Broadcasted lobby:closed for ${lobbyId} to all users`);
+                }
+                
                 console.log(`✅ Game started successfully for lobby ${lobbyId}`);
             } else {
                 throw new Error(`Game status is '${finalGameState?.status}', expected 'playing'`);

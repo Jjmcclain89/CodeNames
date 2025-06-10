@@ -1,3 +1,4 @@
+import { gameLobbies, scheduleClosedLobbyCleanup } from './routes/gameLobbies';
 import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -78,6 +79,12 @@ app.get('/api/health', (req: Request, res: Response): void => {
 });
 
 // Games routes
+// Add io instance to request for real-time updates
+app.use((req: any, res, next) => {
+  req.io = io;
+  next();
+});
+
 app.use('/api/games', gameRoutes);
 app.use('/api/gamelobbies', gameLobbyRoutes);
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { socketService } from '../../services/socketService';
 
 interface GameLobbyListItem {
   code: string;
@@ -15,6 +16,9 @@ interface GameLobbyListItem {
 interface GamesListProps {
   className?: string;
 }
+
+// 🔒 Note: Closed lobbies are automatically filtered out by the backend API
+// Only 'waiting' lobbies appear in this list
 
 const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
   // Games list state
@@ -81,7 +85,13 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
       const data = await response.json();
       
       if (data.success) {
+        // Navigate to the new lobby (real-time update will show it to others)
         navigate(`/lobby/${data.lobbyCode}`);
+        
+        // Optional: Refresh list after a short delay in case user navigates back quickly
+        setTimeout(() => {
+          loadGameLobbiesList();
+        }, 1000);
       } else {
         throw new Error(data.error || 'Failed to create game lobby');
       }
@@ -185,15 +195,102 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
     setLobbyCode(value);
   };
 
-  // Load game lobbies list on component mount and refresh periodically
+  // Load game lobbies list on component mount and setup real-time updates
   useEffect(() => {
     loadGameLobbiesList();
     
-    // Refresh lobbies list every 10 seconds
-    const interval = setInterval(loadGameLobbiesList, 10000);
+    // Setup socket connection for real-time updates
+    if (!socketService.socket?.connected) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        socketService.connect();
+        socketService.authenticate(token);
+      }
+    }
     
-    // Return cleanup function - NOT JSX!
-    return () => clearInterval(interval);
+    // Setup socket listeners for real-time lobby updates
+    const setupSocketListeners = () => {
+      if (socketService.socket) {
+        // Listen for new lobbies being created
+        socketService.socket.on('lobby:created', (data: any) => {
+          console.log('📡 RECEIVED lobby:created event:', data);
+          
+          // Skip if this is for the current user (they're navigating away)
+          const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+          if (data.creatorId && data.creatorId === currentUser.id) {
+            console.log('📡 Skipping lobby:created for current user (they are navigating)');
+            return;
+          }
+          
+          if (data.lobby) {
+            setGameLobbies(prev => {
+              // Check for duplicates before adding
+              const exists = prev.find(lobby => lobby.code === data.lobby.code);
+              if (exists) {
+                console.log('📡 Lobby', data.lobby.code, 'already exists in list, skipping duplicate');
+                return prev;
+              }
+              
+              console.log('📡 Adding new lobby to list:', data.lobby.code);
+              const newList = [data.lobby, ...prev];
+              console.log('📡 Updated list length:', newList.length);
+              return newList;
+            });
+          } else {
+            console.error('❌ lobby:created event missing lobby data');
+          }
+        });
+        
+        // Listen for lobbies being closed (games started)
+        socketService.socket.on('lobby:closed', (data: any) => {
+          console.log('📡 Lobby closed:', data);
+          setGameLobbies(prev => prev.filter(lobby => lobby.code !== data.lobbyCode));
+        });
+        
+        console.log('📡 Socket listeners setup for real-time lobby updates');
+        console.log('📡 Socket ID:', socketService.socket?.id);
+        console.log('📡 Socket connected:', socketService.socket?.connected);
+        console.log('📡 Socket rooms:', socketService.socket?.rooms);
+      }
+    };
+    
+    // Setup listeners immediately if connected, or when authenticated
+    if (socketService.socket?.connected) {
+      setupSocketListeners();
+    } else {
+      socketService.onAuthenticated(() => {
+        setupSocketListeners();
+      });
+    }
+    
+    // Reduced polling to 30 seconds as backup (since we have real-time updates)
+    const interval = setInterval(loadGameLobbiesList, 30000);
+    
+    return () => {
+      clearInterval(interval);
+      // Cleanup socket listeners to prevent multiple registrations
+      if (socketService.socket) {
+        socketService.socket.off('lobby:created');
+        socketService.socket.off('lobby:closed');
+        console.log('🧹 Cleaned up socket listeners for GamesList');
+      }
+    };
+  }, []);
+
+  // Refresh lobby list when user returns to page (e.g., after creating a lobby)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('📱 Page became visible, refreshing lobby list');
+        loadGameLobbiesList();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Main component return - THIS is where the JSX goes!
@@ -270,7 +367,9 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
         {/* Right Column: Active Game Lobbies */}
         <div className="flex-1 flex flex-col h-auto">
           <div className="flex justify-between items-center mb-3 sm:mb-4 lg:mb-6">
-            <h3 className="text-lg sm:text-xl font-semibold text-slate-100">Active Game Lobbies</h3>
+            <h3 className="text-lg sm:text-xl font-semibold text-slate-100">
+              Active Game Lobbies <span className="text-sm text-slate-400">({gameLobbies.length})</span>
+            </h3>
             <button 
               onClick={loadGameLobbiesList}
               disabled={isLoadingLobbies}

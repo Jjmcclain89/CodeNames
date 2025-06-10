@@ -1,5 +1,10 @@
 import express, { Request, Response } from 'express';
 
+
+// Extend Request interface to include io instance
+interface RequestWithIo extends Request {
+  io?: any;
+}
 const router = express.Router();
 
 // Define proper TypeScript interfaces using new team structure
@@ -81,7 +86,7 @@ function generateLobbyCode(): string {
 }
 
 // Create game lobby
-router.post('/create', (req: Request, res: Response): void => {
+router.post('/create', (req: RequestWithIo, res: Response): void => {
   try {
     console.log('🎮 Creating new game lobby...');
     
@@ -103,6 +108,78 @@ router.post('/create', (req: Request, res: Response): void => {
     gameLobbies.set(lobbyCode, gameLobby);
     
     console.log(`✅ Created game lobby: ${lobbyCode}`);
+    
+    // 📡 BROADCAST: Notify all users about the new lobby
+    try {
+      if (req.io) {
+        const newLobbyData = {
+          code: gameLobby.code,
+          id: gameLobby.id,
+          status: gameLobby.status,
+          playerCount: 0,
+          players: [],
+          ownerUsername: gameLobby.ownerUsername,
+          createdAt: gameLobby.createdAt,
+          lastActivity: gameLobby.updatedAt
+        };
+        
+        req.io.to('GLOBAL').emit('lobby:created', {
+          lobby: newLobbyData,
+          message: `New lobby ${lobbyCode} created by ${username || 'Anonymous'}`
+        });
+        console.log(`📡 SUCCESS: Broadcasted lobby:created for ${lobbyCode} to GLOBAL room`);
+        console.log(`📡 Lobby data:`, JSON.stringify(newLobbyData, null, 2));
+      } else {
+        console.log(`❌ ERROR: req.io not available when creating lobby ${lobbyCode}`);
+      }
+    } catch (error) {
+      console.error(`❌ ERROR broadcasting lobby:created for ${lobbyCode}:`, error);
+    }
+    
+    // 📡 BROADCAST: Notify all users about the new lobby
+    try {
+      if (req.io) {
+        const newLobbyData = {
+          code: gameLobby.code,
+          id: gameLobby.id,
+          status: gameLobby.status,
+          playerCount: 0,
+          players: [],
+          ownerUsername: gameLobby.ownerUsername,
+          createdAt: gameLobby.createdAt,
+          lastActivity: gameLobby.updatedAt
+        };
+        
+        req.io.to('GLOBAL').emit('lobby:created', {
+          lobby: newLobbyData,
+          message: `New lobby ${lobbyCode} created by ${username || 'Anonymous'}`
+        });
+        console.log(`📡 SUCCESS: Broadcasted lobby:created for ${lobbyCode} to GLOBAL room`);
+        console.log(`📡 Lobby data:`, JSON.stringify(newLobbyData, null, 2));
+      } else {
+        console.log(`❌ ERROR: req.io not available when creating lobby ${lobbyCode}`);
+      }
+    } catch (error) {
+      console.error(`❌ ERROR broadcasting lobby:created for ${lobbyCode}:`, error);
+    }
+    
+    // 📡 BROADCAST: Notify all users about the new lobby
+    if (req.io) {
+      req.io.to('GLOBAL').emit('lobby:created', {
+        lobby: {
+          code: gameLobby.code,
+          id: gameLobby.id,
+          status: gameLobby.status,
+          playerCount: 0,
+          players: [],
+          ownerUsername: gameLobby.ownerUsername,
+          createdAt: gameLobby.createdAt,
+          lastActivity: gameLobby.updatedAt
+        },
+        message: `New lobby ${lobbyCode} created by ${username || 'Anonymous'}`
+      });
+      console.log(`📡 Broadcasted lobby:created for ${lobbyCode} to all users`);
+    }
     
     res.json({ 
       success: true, 
@@ -217,7 +294,9 @@ router.get('/', (req: Request, res: Response): void => {
   try {
     console.log('📋 Listing all game lobbies...');
     
-    const activeGameLobbies = Array.from(gameLobbies.values()).map(lobby => {
+    const activeGameLobbies = Array.from(gameLobbies.values())
+    .filter(lobby => lobby.status !== 'closed') // 🔒 Filter out closed lobbies
+    .map(lobby => {
       const allPlayers = getAllPlayers(lobby);
       const owner = findOwner(lobby);
       
@@ -255,5 +334,69 @@ router.get('/', (req: Request, res: Response): void => {
   }
 });
 
+
+// 🔒 LOBBY STATE MANAGEMENT UTILITIES
+
+// Clean up old closed lobbies (older than specified hours)
+function cleanupOldClosedLobbies(maxAgeHours: number = 24): number {
+  const cutoffTime = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
+  let cleanedCount = 0;
+  
+  for (const [lobbyCode, lobby] of gameLobbies.entries()) {
+    if (lobby.status === 'closed') {
+      const lastActivity = new Date(lobby.updatedAt);
+      if (lastActivity < cutoffTime) {
+        gameLobbies.delete(lobbyCode);
+        cleanedCount++;
+        console.log(`🧹 Cleaned up old closed lobby: ${lobbyCode}`);
+      }
+    }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`🧹 Cleaned up ${cleanedCount} old closed lobbies`);
+  }
+  
+  return cleanedCount;
+}
+
+// Get lobby statistics
+function getLobbyStats(): { total: number; waiting: number; closed: number } {
+  let waiting = 0;
+  let closed = 0;
+  
+  for (const lobby of gameLobbies.values()) {
+    if (lobby.status === 'waiting') {
+      waiting++;
+    } else if (lobby.status === 'closed') {
+      closed++;
+    }
+  }
+  
+  return {
+    total: gameLobbies.size,
+    waiting,
+    closed
+  };
+}
+
+// Schedule periodic cleanup of old closed lobbies
+function scheduleClosedLobbyCleanup(): void {
+  // Clean up old closed lobbies every hour
+  setInterval(() => {
+    console.log('🧹 Running periodic closed lobby cleanup...');
+    const cleanedCount = cleanupOldClosedLobbies(24); // Keep closed lobbies for 24 hours
+    
+    if (cleanedCount === 0) {
+      console.log('🧹 No old closed lobbies to clean up');
+    }
+    
+    // Log current lobby stats
+    const stats = getLobbyStats();
+    console.log(`📊 Lobby stats: ${stats.waiting} waiting, ${stats.closed} closed, ${stats.total} total`);
+  }, 60 * 60 * 1000); // Every hour
+}
+
+
 export default router;
-export { gameLobbies, GameLobby, Player, Team };
+export { gameLobbies, GameLobby, Player, Team, cleanupOldClosedLobbies, getLobbyStats, scheduleClosedLobbyCleanup };

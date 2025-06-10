@@ -4,6 +4,16 @@ import ChatRoom from '../components/Chat/ChatRoom';
 import GamesList from '../components/GamesList';
 
 const HomePage: React.FC = () => {
+  // Ensure socket connection for real-time lobby updates
+  React.useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token && !socketService.isConnected) {
+      socketService.connect();
+      socketService.authenticate(token);
+    }
+  }, []);
+
+
   return (
     <div className="pt-16 min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 lg:overflow-hidden relative lg:flex lg:flex-col">
       {/* Background Pattern - Matching GameBoard */}
