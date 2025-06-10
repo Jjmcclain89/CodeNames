@@ -74,9 +74,27 @@ class SocketService {
     console.log('📡 Creating new socket connection');
     this.isConnecting = true;
 
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
-    console.log('📡 Connecting to socket server:', socketUrl);
-    console.log('📱 Environment VITE_SOCKET_URL:', import.meta.env.VITE_SOCKET_URL);
+    // Dynamic socket URL - use same host as current page for mobile compatibility
+    const currentHost = window.location.hostname;
+    const isLocalhost = currentHost === 'localhost' || currentHost === '127.0.0.1';
+    const socketPort = '3001';
+    
+    let socketUrl;
+    if (import.meta.env.VITE_SOCKET_URL) {
+      socketUrl = import.meta.env.VITE_SOCKET_URL;
+      console.log('📡 Using VITE_SOCKET_URL:', socketUrl);
+    } else if (isLocalhost) {
+      socketUrl = `http://localhost:${socketPort}`;
+      console.log('📡 Using localhost for dev:', socketUrl);
+    } else {
+      // Mobile or IP access - use same host as current page
+      socketUrl = `http://${currentHost}:${socketPort}`;
+      console.log('📡 Using dynamic host for mobile/IP access:', socketUrl);
+    }
+    
+    console.log('📱 Current page host:', currentHost);
+    console.log('📱 Detected environment:', isLocalhost ? 'Localhost' : 'Remote/Mobile');
+    console.log('📱 Final socket URL:', socketUrl);
     console.log('📱 User agent:', navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop');
 
     this._socket = io(socketUrl, {

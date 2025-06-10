@@ -45,6 +45,10 @@ export interface CodenamesGame {
   board: CodeCard[];
   currentClue?: GameClue;
   guessesRemaining: number;
+  isSoloMode?: boolean;
+  soloCluesRemaining?: number; // Number of clues remaining (starts at 5)
+  soloTurnGuessesRemaining?: number; // Guesses left in current turn
+  soloTeam?: TeamColor; // which team is playing in solo mode
   winner?: TeamColor;
   createdAt: string;
   updatedAt: string;
@@ -169,6 +173,31 @@ export const canStartGame = (game: CodenamesGame): boolean => {
   console.log('🔍 [CANSTART] Final result:', canStart);
   
   return canStart;
+};
+
+
+// Solo mode helpers
+// Solo Mode Rules:
+// - Team gets 5 clues total
+// - Spymaster gives clue (word + number) → -1 clue
+// - Operatives can guess (clue number + 1) words per turn  
+// - Penalties: Neutral=end turn, Enemy=end turn + lose 1 clue, Assassin=game over
+// - Win: Find all team cards, Lose: Run out of clues
+export const isSoloMode = (game: CodenamesGame): boolean => {
+  const redValid = isTeamValid(game.redTeam);
+  const blueValid = isTeamValid(game.blueTeam);
+  return (redValid && !blueValid) || (!redValid && blueValid);
+};
+
+export const getSoloTeam = (game: CodenamesGame): TeamColor => {
+  if (isTeamValid(game.redTeam)) return 'red';
+  if (isTeamValid(game.blueTeam)) return 'blue';
+  return 'neutral';
+};
+
+export const getSoloTeamCards = (game: CodenamesGame): CodeCard[] => {
+  const soloTeam = getSoloTeam(game);
+  return game.board.filter(card => card.team === soloTeam);
 };
 
 // Word list for game generation

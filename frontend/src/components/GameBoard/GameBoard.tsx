@@ -1,26 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { CodenamesGame, GamePlayer, TeamColor, PlayerRole } from '../../types/game';
+import { CodenamesGame, GamePlayer, TeamColor, PlayerRole, isSoloMode, getSoloTeam } from '../../types/game';
 import Card from './Card';
 import { gameService } from '../../services/gameService';
 
 interface GameBoardProps {
   gameState: CodenamesGame;
   currentPlayer: GamePlayer | null;
-  onCardClick: (cardId: string) => void;
-  onGiveClue: (word: string, number: number) => void;
-  onEndTurn: () => void;
-  onStartGame: () => void;
-  onJoinTeam: (team: TeamColor, role: PlayerRole) => void;
+  isConnected: boolean;
 }
 
 export const GameBoard: React.FC<GameBoardProps> = ({
   gameState,
   currentPlayer,
-  onCardClick,
-  onGiveClue,
-  onEndTurn,
-  onStartGame,
-  onJoinTeam
+  isConnected
 }) => {
   const [clueWord, setClueWord] = useState('');
   const [clueNumber, setClueNumber] = useState(1);
@@ -43,10 +35,32 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   const canGiveClue = gameService.canPlayerGiveClue(gameState, currentPlayer);
   const canRevealCard = gameService.canPlayerRevealCard(gameState, currentPlayer);
 
+  // Game action handlers
+  const handleCardClick = (cardId: string) => {
+    console.log('🎯 Revealing card:', cardId);
+    gameService.revealCard(gameState.gameCode, cardId);
+  };
+
   const handleGiveClue = () => {
     if (clueWord.trim() && clueNumber >= 1 && clueNumber <= 9) {
-      onGiveClue(clueWord.trim(), clueNumber);
+      console.log('🎯 Giving clue:', clueWord.trim(), clueNumber);
+      gameService.giveClue(gameState.gameCode, clueWord.trim(), clueNumber);
     }
+  };
+
+  const handleEndTurn = () => {
+    console.log('🎯 Ending turn');
+    gameService.endTurn(gameState.gameCode);
+  };
+
+  const handleStartGame = () => {
+    console.log('🎯 Starting game');
+    gameService.startGame();
+  };
+
+  const handleJoinTeam = (team: TeamColor, role: PlayerRole) => {
+    console.log('Join team:', team, role);
+    // TODO: Implement via socket
   };
 
   const getPlayersByTeam = (team: TeamColor) => {
@@ -57,12 +71,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     return gameState.players.some(p => p.team === team && p.role === 'spymaster');
   };
 
-  // Get board glow effect based on current turn - ENHANCED for visibility
+  // Get board glow effect based on current turn and mode
   const getBoardGlowEffect = () => {
-    if (gameState.currentTurn === 'red') {
-      return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+    if (gameState.isSoloMode) {
+      // Solo mode - use team color
+      if (gameState.soloTeam === 'red') {
+        return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+      } else {
+        return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+      }
     } else {
-      return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+      // Classic mode - use current turn
+      if (gameState.currentTurn === 'red') {
+        return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+      } else {
+        return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+      }
     }
   };
 
@@ -77,7 +101,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         
         <div className="flex flex-col items-center justify-center min-h-screen">
           <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-2xl border border-slate-600/50 p-8 max-w-4xl w-full backdrop-blur-lg relative z-10">
-            {/* Banner removed for cleaner look */}
             
             {/* Current Player Status */}
             {currentPlayer && (
@@ -106,14 +129,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 </h3>
                 <div className="space-y-3 mb-4">
                   <button
-                    onClick={() => onJoinTeam('red', 'spymaster')}
+                    onClick={() => handleJoinTeam('red', 'spymaster')}
                     className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={hasSpymaster('red')}
                   >
                     {hasSpymaster('red') ? '📻 Spymaster Taken' : '📻 Join as Spymaster'}
                   </button>
                   <button
-                    onClick={() => onJoinTeam('red', 'operative')}
+                    onClick={() => handleJoinTeam('red', 'operative')}
                     className="w-full bg-red-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-500 transition-colors"
                   >
                     🕵️ Join as Operative
@@ -143,14 +166,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 </h3>
                 <div className="space-y-3 mb-4">
                   <button
-                    onClick={() => onJoinTeam('blue', 'spymaster')}
+                    onClick={() => handleJoinTeam('blue', 'spymaster')}
                     className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={hasSpymaster('blue')}
                   >
                     {hasSpymaster('blue') ? '📻 Spymaster Taken' : '📻 Join as Spymaster'}
                   </button>
                   <button
-                    onClick={() => onJoinTeam('blue', 'operative')}
+                    onClick={() => handleJoinTeam('blue', 'operative')}
                     className="w-full bg-blue-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-500 transition-colors"
                   >
                     🕵️ Join as Operative
@@ -177,7 +200,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             {/* Start Game Button */}
             <div className="text-center">
               <button
-                onClick={onStartGame}
+                onClick={handleStartGame}
                 className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed shadow-lg"
                 disabled={gameState.players.length === 0}
               >
@@ -297,7 +320,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       key={card.id}
                       card={card}
                       isSpymaster={isSpymaster}
-                      onClick={canRevealCard ? onCardClick : undefined}
+                      onClick={canRevealCard ? handleCardClick : undefined}
                       disabled={!canRevealCard}
                     />
                   )) : (
@@ -342,13 +365,29 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             </div>
           )}
 
-          {canRevealCard && (
+          {/* Solo Mode Controls */}
+          {gameState.isSoloMode && canRevealCard && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
+              <p className="text-slate-200 mb-3">
+                🎯 Click a card to reveal it ({gameState.soloTurnGuessesRemaining || 0} guesses this turn, {gameState.soloCluesRemaining || 0} clues left)
+              </p>
+              <div className="text-sm text-slate-400 mb-3">
+                <span className="text-emerald-400">✅ Your team: No penalty</span> • 
+                <span className="text-yellow-400"> ⚪ Neutral: End turn</span> • 
+                <span className="text-red-400"> ❌ Enemy: End turn + lose clue</span> • 
+                <span className="text-red-600"> 💀 Assassin: Game over</span>
+              </div>
+            </div>
+          )}
+          
+          {/* Classic Mode Controls */}
+          {!gameState.isSoloMode && canRevealCard && (
             <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
               <p className="text-slate-200 mb-3">
                 🎯 Click a card to guess ({gameState.guessesRemaining} left)
               </p>
               <button
-                onClick={onEndTurn}
+                onClick={handleEndTurn}
                 className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-colors font-semibold shadow-lg"
               >
                 ⏭️ End Turn
@@ -356,7 +395,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             </div>
           )}
 
-          {!isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
+          {!gameState.isSoloMode && !isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
             <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-4 text-center max-w-md backdrop-blur-lg border border-slate-600/50">
               <p className="text-slate-300">
                 ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} team...
@@ -366,135 +405,43 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         </div>
       </div>
 
-      {/* Side Panels */}
-      {playersVisible && (
-        <div className="fixed right-4 top-20 bottom-4 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 flex flex-col backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-100">👥 Players ({gameState.players.length})</h3>
-            <button 
-              onClick={() => setPlayersVisible(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="space-y-2 overflow-y-auto">
-            {gameState.players.map((player) => (
-              <div key={player.id} className="flex items-center justify-between p-2 bg-slate-700/50 rounded-lg">
-                <div>
-                  <div className="font-medium text-slate-100">{player.username}</div>
-                  <div className={`text-xs ${player.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                    {player.team === 'red' ? '🔴' : '🔵'} {player.role === 'spymaster' ? '📻' : '🕵️'}
-                  </div>
-                </div>
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {chatVisible && (
-        <div className="fixed right-4 top-20 bottom-4 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 flex flex-col backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-100">💬 Chat</h3>
-            <button 
-              onClick={() => setChatVisible(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto border border-slate-600 rounded-lg p-3 mb-4 bg-slate-700/30">
-            <div className="space-y-2 text-sm">
-              <div className="text-slate-400 text-center py-4">
-                Chat functionality can be integrated here
-              </div>
-            </div>
-          </div>
-
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              placeholder="Type a message..."
-              className="flex-1 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 placeholder-slate-400 text-sm"
-            />
-            <button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200">
-              Send
-            </button>
-          </div>
-        </div>
-      )}
-
-      {infoVisible && (
-        <div className="fixed right-4 top-20 w-72 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-xl shadow-2xl border border-slate-600/50 p-4 z-40 backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-amber-200">ℹ️ Game Info</h3>
-            <button 
-              onClick={() => setInfoVisible(false)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div>
-              <span className="text-slate-400">Game Code:</span>
-              <span className="ml-2 font-mono text-amber-300">{gameState.gameCode || 'DEMO'}</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Status:</span>
-              <span className="ml-2 text-emerald-400">{gameState.status}</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Current Turn:</span>
-              <span className={`ml-2 ${gameState.currentTurn === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                {gameState.currentTurn === 'red' ? '🔴' : '🔵'} {gameState.currentTurn}
-              </span>
-            </div>
-            <div className="pt-2 border-t border-slate-600">
-              <div className="text-amber-200 font-medium mb-2">Team Scores:</div>
-              <div className="flex justify-between items-center">
-                <span className="text-red-400">🔴 Red:</span>
-                <span className="text-red-300 font-medium">{stats.red.remaining} left</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-blue-400">🔵 Blue:</span>
-                <span className="text-blue-300 font-medium">{stats.blue.remaining} left</span>
-              </div>
-            </div>
-            {currentPlayer && (
-              <div className="pt-2 border-t border-slate-600">
-                <div className="text-amber-200 font-medium mb-2">Your Info:</div>
-                <div>
-                  <span className="text-slate-400">Name:</span>
-                  <span className="ml-2 text-amber-300">{currentPlayer.username}</span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Team:</span>
-                  <span className={`ml-2 ${currentPlayer.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-                    {currentPlayer.team}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400">Role:</span>
-                  <span className="ml-2 text-slate-300">{currentPlayer.role}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Game Over Modal */}
       {gameState.status === 'finished' && gameState.winner && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-600">
-            <h2 className="text-4xl font-bold text-center mb-4 text-amber-100">🎉 Game Over! 🎉</h2>
-            <div className={`text-3xl font-bold text-center mb-6 ${gameState.winner === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
-              {gameState.winner === 'red' ? '🔴' : '🔵'} {gameState.winner.charAt(0).toUpperCase() + gameState.winner.slice(1)} Team Wins!
-            </div>
+            {gameState.isSoloMode ? (
+              // Solo mode results
+              gameState.winner === gameState.soloTeam ? (
+                <>
+                  <h2 className="text-4xl font-bold text-center mb-4 text-emerald-100">🎉 Victory! 🎉</h2>
+                  <div className="text-2xl font-bold text-center mb-6 text-emerald-400">
+                    You found all your team's words!
+                  </div>
+                </>
+              ) : gameState.winner === 'assassin' ? (
+                <>
+                  <h2 className="text-4xl font-bold text-center mb-4 text-red-100">💀 Game Over 💀</h2>
+                  <div className="text-2xl font-bold text-center mb-6 text-red-400">
+                    You hit the assassin!
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-4xl font-bold text-center mb-4 text-yellow-100">😔 Out of Clues 😔</h2>
+                  <div className="text-2xl font-bold text-center mb-6 text-yellow-400">
+                    You ran out of clues!
+                  </div>
+                </>
+              )
+            ) : (
+              // Classic mode results
+              <>
+                <h2 className="text-4xl font-bold text-center mb-4 text-amber-100">🎉 Game Over! 🎉</h2>
+                <div className={`text-3xl font-bold text-center mb-6 ${gameState.winner === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                  {gameState.winner === 'red' ? '🔴' : '🔵'} {gameState.winner.charAt(0).toUpperCase() + gameState.winner.slice(1)} Team Wins!
+                </div>
+              </>
+            )}
             <div className="flex gap-4">
               <button
                 onClick={() => window.location.reload()}
@@ -503,7 +450,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 🔄 New Game
               </button>
               <button
-                onClick={() => gameService.resetGame()}
+                onClick={() => console.log('Reset game')}
                 className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-3 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold"
               >
                 🎮 Play Again

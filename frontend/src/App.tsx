@@ -9,6 +9,7 @@ import GameDebugPage from './pages/GameDebugPage';
 import authService from './services/authService';
 import socketService from './services/socketService';
 import './App.css';
+import Header from './components/Header';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -77,8 +78,12 @@ function App() {
   return (
     <Router>
       <div className="App min-h-screen">
+        {/* Translucent Header - only show when authenticated */}
+        {isAuthenticated && (
+          <Header user={user} onLogout={handleLogout} />
+        )}
 
-        <main>
+        <main className="pt-16">
           <Routes>
             {/* Login Route */}
             <Route

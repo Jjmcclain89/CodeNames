@@ -19,6 +19,7 @@ interface GameLobby {
   id: string;
   code: string;
   owner: string;
+  ownerUsername: string;  // Store owner username directly
   redTeam?: Team;
   blueTeam?: Team;
   status: string;
@@ -47,10 +48,21 @@ function getAllPlayers(lobby: GameLobby): Player[] {
 }
 
 // Helper function to find owner
-function findOwner(lobby: GameLobby): Player | undefined {
+function findOwner(lobby: GameLobby): { username: string; id: string } | undefined {
+  // First, try to find the owner in the teams (if they've joined a team)
   const allPlayers = getAllPlayers(lobby);
-  // For now, just return the first player as owner
-  return allPlayers[0];
+  const ownerInTeam = allPlayers.find(player => player.id === lobby.owner);
+  
+  if (ownerInTeam) {
+    return { username: ownerInTeam.username, id: ownerInTeam.id };
+  }
+  
+  // If owner hasn't joined a team yet, use the stored owner username
+  if (lobby.ownerUsername) {
+    return { username: lobby.ownerUsername, id: lobby.owner };
+  }
+  
+  return undefined;
 }
 
 // Generate lobby code
@@ -80,16 +92,13 @@ router.post('/create', (req: Request, res: Response): void => {
       id: lobbyCode,
       code: lobbyCode,
       owner: userId || 'anonymous',
+      ownerUsername: username || 'Anonymous',  // Store the owner's username
       status: 'waiting',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     
-    // Add creator as first player (neutral, not on a team yet)
-    if (username && userId) {
-      // For now, don't assign the creator to any team automatically
-      // They'll join a team through the UI
-    }
+    // Creator will join a team through the UI later
     
     gameLobbies.set(lobbyCode, gameLobby);
     
@@ -218,7 +227,7 @@ router.get('/', (req: Request, res: Response): void => {
         status: lobby.status,
         playerCount: allPlayers.length,
         players: allPlayers.map(p => p.username),
-        ownerUsername: owner?.username || 'Unknown',
+        ownerUsername: owner?.username || 'Anonymous',  // Better fallback
         createdAt: lobby.createdAt,
         lastActivity: lobby.updatedAt
       };

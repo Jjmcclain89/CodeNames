@@ -189,7 +189,6 @@ const GameLobbyPage: React.FC = () => {
     });
   };
 
-  
   const handleSimpleTest = () => {
     console.log('🧪 Frontend: Sending SIMPLE_TEST event');
     socketService.socket?.emit('SIMPLE_TEST', {});
@@ -322,7 +321,7 @@ const GameLobbyPage: React.FC = () => {
   // Loading State - Dark Theme
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center relative">
+      <div className="pt-16 min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 flex items-center justify-center relative">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
@@ -387,16 +386,10 @@ const GameLobbyPage: React.FC = () => {
 
       <div className="relative z-10 max-w-6xl mx-auto p-6">
         {/* Header Section */}
-        <div className="mb-6 flex justify-between items-center">
-          <button 
-            onClick={() => navigate('/')}
-            className="text-blue-400 hover:text-blue-300 flex items-center font-medium transition-colors duration-200"
-          >
-            ← Back to Home
-          </button>
-          <div className="flex items-center space-x-4 text-sm">
+        <div className="mb-6 text-center">
+          <div className="flex justify-center items-center space-x-6 text-sm">
             <div className="text-slate-300">
-              Game: <span className={`font-semibold`}>
+              Game: <span className="font-semibold text-white">
                 {lobbyId}
               </span>
             </div>
@@ -409,19 +402,6 @@ const GameLobbyPage: React.FC = () => {
         </div>
 
         {/* Error Display */}
-        {/* 🧪 SIMPLE CONNECTION TEST */}
-        <div className="mb-6 p-4 bg-green-900/30 border border-green-500/50 rounded-lg backdrop-blur-sm">
-          <button
-            onClick={handleSimpleTest}
-            className="px-4 py-2 bg-green-700/50 hover:bg-green-600/60 text-white rounded border border-green-500/50"
-          >
-            🧪 Test Socket Connection
-          </button>
-          <p className="text-green-200 text-sm mt-2">
-            Check browser console and backend console for test messages
-          </p>
-        </div>
-
         {error && (
           <div className="mb-6 p-4 bg-red-900/30 border border-red-500/50 rounded-lg backdrop-blur-sm">
             <p className="text-red-200">{error}</p>

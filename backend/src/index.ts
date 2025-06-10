@@ -257,7 +257,7 @@ server.listen(Number(PORT), '0.0.0.0', () => {
   console.log('');
   console.log('🎉 ================================');
   console.log(`🚀 Codenames Server running on port ${PORT}`);
-  console.log(`📱 Mobile access: http://192.168.86.138:${PORT}`);
+  console.log(`📱 Mobile access: http://192.168.86.148:${PORT}`);
   console.log('📡 Socket.io using unified socketHandlers.ts');
   console.log(`🔗 API endpoints: http://localhost:${PORT}/api`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);

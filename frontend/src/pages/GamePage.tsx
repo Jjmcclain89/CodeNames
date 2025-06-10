@@ -72,12 +72,14 @@ const GamePage: React.FC = () => {
           
           setGameState(gameData.game);
           
-          // Verify this is an active game (not waiting room)
-          if (gameData.game.status === 'waiting' || gameData.game.status === 'setup') {
-            
-            setError('Game has not started yet. Please wait in the room.');
-            setIsLoading(false);
-            return;
+          // Allow waiting games to proceed (they'll show team setup)
+          // Only reject if the game is in an invalid state
+          if (gameData.game.status === 'finished') {
+            console.log('🏁 Game is finished, proceeding to show results');
+          } else if (gameData.game.status === 'waiting') {
+            console.log('⏳ Game is in waiting/setup state, will show team selection');
+          } else {
+            console.log(`🎮 Game status: ${gameData.game.status}`);
           }
           
           
@@ -141,7 +143,21 @@ const GamePage: React.FC = () => {
     
     gameService.onGameStateUpdated((newGameState: any) => {
       console.log('🎮 Game state updated:', newGameState);
+      
+      // 🔍 DEBUG: Check clue in received game state
+      console.log('🔍 [STATE UPDATE] Current clue in new state:', newGameState.currentClue);
+      console.log('🔍 [STATE UPDATE] Guesses remaining:', newGameState.guessesRemaining);
+      console.log('🔍 [STATE UPDATE] Before setting state, old clue was:', gameState?.currentClue);
+      
+      // 🔍 DEBUG: Check solo mode status
+      console.log('🔍 [SOLO MODE DEBUG] isSoloMode:', newGameState.isSoloMode);
+      console.log('🔍 [SOLO MODE DEBUG] soloTeam:', newGameState.soloTeam);
+      console.log('🔍 [SOLO MODE DEBUG] Red team:', newGameState.redTeam ? 'exists' : 'null');
+      console.log('🔍 [SOLO MODE DEBUG] Blue team:', newGameState.blueTeam ? 'exists' : 'null');
+      
       setGameState(newGameState);
+      
+      console.log('🔍 [STATE UPDATE] State should now be updated with clue');
     });
 
     gameService.onGameError((error: string) => {
@@ -153,6 +169,8 @@ const GamePage: React.FC = () => {
     if (socketService.socket) {
       socketService.socket.on('game:clue-given', (clue: any) => {
         console.log('💡 Clue given:', clue);
+        console.log('🔍 [CLUE EVENT] Current gameState.currentClue before this event:', gameState?.currentClue);
+        console.log('🔍 [CLUE EVENT] This might be redundant if game:state-updated is working');
       });
       
       socketService.socket.on('game:card-revealed', (card: any) => {
@@ -170,11 +188,59 @@ const GamePage: React.FC = () => {
   };
 
   const getCurrentUserPlayer = () => {
-    if (!gameState || !gameState.players) return null;
+    if (!gameState || !currentUser) return null;
     
-    return gameState.players.find((p: any) => 
-      p.username === currentUser?.username || p.id === currentUser?.id
-    );
+    // Check red team spymaster
+    if (gameState.redTeam?.spymaster && 
+        (gameState.redTeam.spymaster.username === currentUser.username || 
+         gameState.redTeam.spymaster.id === currentUser.id)) {
+      return {
+        ...gameState.redTeam.spymaster,
+        team: 'red' as const,
+        role: 'spymaster' as const
+      };
+    }
+    
+    // Check red team operatives
+    if (gameState.redTeam?.operatives) {
+      const redOperative = gameState.redTeam.operatives.find((p: any) => 
+        p.username === currentUser.username || p.id === currentUser.id
+      );
+      if (redOperative) {
+        return {
+          ...redOperative,
+          team: 'red' as const,
+          role: 'operative' as const
+        };
+      }
+    }
+    
+    // Check blue team spymaster
+    if (gameState.blueTeam?.spymaster && 
+        (gameState.blueTeam.spymaster.username === currentUser.username || 
+         gameState.blueTeam.spymaster.id === currentUser.id)) {
+      return {
+        ...gameState.blueTeam.spymaster,
+        team: 'blue' as const,
+        role: 'spymaster' as const
+      };
+    }
+    
+    // Check blue team operatives
+    if (gameState.blueTeam?.operatives) {
+      const blueOperative = gameState.blueTeam.operatives.find((p: any) => 
+        p.username === currentUser.username || p.id === currentUser.id
+      );
+      if (blueOperative) {
+        return {
+          ...blueOperative,
+          team: 'blue' as const,
+          role: 'operative' as const
+        };
+      }
+    }
+    
+    return null;
   };
 
   // Loading State
@@ -205,13 +271,13 @@ const GamePage: React.FC = () => {
           <div className="space-y-3">
             <button 
               onClick={() => navigate('/')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
             >
               🏠 Go Back to Home
             </button>
             <button 
               onClick={() => window.location.reload()}
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+              className="w-full bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
             >
               🔄 Try Again
             </button>
@@ -221,71 +287,42 @@ const GamePage: React.FC = () => {
     );
   }
 
-  // Main Game UI - Only show if game is active
-  if (gameState && gameState.status === 'playing') {
+  // Game State - Render the actual game
+  if (gameState) {
     return (
-      <GameBoard 
-        gameState={gameState} 
-        currentPlayer={getCurrentUserPlayer()}
-        onCardClick={(cardId) => {
-          if (!isConnected) {
-            setError('Not connected to server');
-            return;
-          }
-          socketService.socket?.emit('game:reveal-card', cardId);
-        }}
-        onGiveClue={(word, number) => {
-          if (!isConnected) {
-            setError('Not connected to server');
-            return;
-          }
-          if (!word.trim()) {
-            setError('Please enter a clue word');
-            return;
-          }
-          if (number < 1 || number > 9) {
-            setError('Number must be between 1 and 9');
-            return;
-          }
-          socketService.socket?.emit('game:give-clue', { word: word.trim(), number });
-        }}
-        onEndTurn={() => {
-          if (!isConnected) {
-            setError('Not connected to server');
-            return;
-          }
-          socketService.socket?.emit('game:end-turn');
-        }}
-        onStartGame={() => {
-          // No longer needed - games start from room
-        }}
-        onJoinTeam={() => {
-          // No longer needed - team assignment happens in room
-        }}
-      />
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+        </div>
+
+        {/* Game Content */}
+        <div className="relative z-10">
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 mx-4 p-4 bg-red-900/50 border border-red-500/50 rounded-lg">
+              <p className="text-red-200">{error}</p>
+            </div>
+          )}
+
+          {/* Game Board */}
+          <GameBoard 
+            gameState={gameState}
+            currentPlayer={getCurrentUserPlayer()}
+            isConnected={isConnected}
+          />
+        </div>
+      </div>
     );
   }
 
-  // Fallback if game state is invalid
+  // Fallback - should not reach here
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-      <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
-        <div className="text-yellow-600 text-2xl font-bold mb-4">⚠️ Invalid Game State</div>
-        <div className="text-gray-600 mb-6">
-          <p>This game is not ready for play.</p>
-          <p className="text-sm mt-2">Game Status: {gameState?.status || 'Unknown'}</p>
-          <p className="text-xs mt-2 font-mono bg-gray-100 p-2 rounded">
-            Debug: isLoading={isLoading ? 'true' : 'false'}, 
-            error="{error}", 
-            gameState={gameState ? 'exists' : 'null'}
-          </p>
-        </div>
-        <button 
-          onClick={() => navigate('/')}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-        >
-          🏠 Go Back to Home
-        </button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center pt-16">
+      <div className="text-center">
+        <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Codenames</div>
+        <p className="text-gray-600">Game not found</p>
       </div>
     </div>
   );

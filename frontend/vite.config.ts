@@ -16,7 +16,7 @@ export default defineConfig({
     proxy: {
       // Mobile API routing: /api/* requests get proxied to backend
       '/api': {
-        target: 'http://192.168.86.138:3001',  // Use local IP for mobile devices
+        target: 'http://192.168.86.148:3001',  // Auto-detected local IP for mobile devices
         changeOrigin: true,
         secure: false,
       }

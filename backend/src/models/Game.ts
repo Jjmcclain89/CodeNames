@@ -1,5 +1,5 @@
 // Game Model for Codenames - Updated for new team structure
-import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS, Team, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, canStartGame as canStartGameHelper } from '../../../shared/types/game';
+import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS, Team, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, canStartGame as canStartGameHelper, isSoloMode, getSoloTeam, getSoloTeamCards } from '../../../shared/types/game';
 
 export class CodenamesGameModel {
   private game: CodenamesGame;
@@ -154,7 +154,6 @@ export class CodenamesGameModel {
     return true;
   }
 
-
   // Set teams wholesale (for lobby-to-game transfer)
   setTeams(redTeam?: Team, blueTeam?: Team): void {
     console.log('🔄 [GAME MODEL] setTeams called with:', {
@@ -169,7 +168,7 @@ export class CodenamesGameModel {
     console.log('✅ [GAME MODEL] Teams set successfully');
   }
 
-    updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
+  updatePlayerOnlineStatus(playerId: string, isOnline: boolean): boolean {
     const allPlayers = getAllPlayers(this.game);
     const player = allPlayers.find(p => p.id === playerId);
     if (!player) return false;
@@ -202,7 +201,20 @@ export class CodenamesGameModel {
     if (!this.canStartGame()) return false;
 
     this.game.status = 'playing';
-    this.game.currentTurn = 'red';
+    
+    // Check if this is solo mode
+    if (isSoloMode(this.game)) {
+      this.game.isSoloMode = true;
+      this.game.soloTeam = getSoloTeam(this.game);
+      this.game.soloCluesRemaining = 5; // Start with 5 clues
+      this.game.soloTurnGuessesRemaining = 0; // No active turn yet
+      this.game.currentTurn = this.game.soloTeam; // Set turn to the solo team
+      console.log(`🎯 Solo mode activated for ${this.game.soloTeam} team with 5 guesses`);
+    } else {
+      this.game.isSoloMode = false;
+      this.game.currentTurn = 'red'; // Classic mode starts with red
+    }
+    
     this.game.guessesRemaining = 0;
     this.updateTimestamp();
     return true;
@@ -226,12 +238,112 @@ export class CodenamesGameModel {
       timestamp: new Date().toISOString()
     };
 
-    this.game.guessesRemaining = number + 1; // Players get one extra guess
+    if (this.game.isSoloMode) {
+      // Solo mode: Use clues and set turn guesses
+      this.game.soloCluesRemaining = (this.game.soloCluesRemaining || 5) - 1;
+      this.game.soloTurnGuessesRemaining = number + 1; // Operatives get clue number + 1 guesses
+      console.log(`🎯 Solo clue given: ${this.game.soloCluesRemaining} clues left, ${this.game.soloTurnGuessesRemaining} guesses this turn`);
+    } else {
+      // Classic mode: Use normal guesses
+      this.game.guessesRemaining = number + 1; // Players get one extra guess
+    }
     this.updateTimestamp();
     return true;
   }
 
   revealCard(playerId: string, cardId: string): { success: boolean; card?: CodeCard; gameEnded?: boolean; winner?: TeamColor } {
+    // Solo mode logic
+    if (this.game.isSoloMode) {
+      console.log('🔍 [SOLO DEBUG] Solo mode card reveal started');
+      console.log('🔍 [SOLO DEBUG] Player ID:', playerId);
+      console.log('🔍 [SOLO DEBUG] Card ID:', cardId);
+      console.log('🔍 [SOLO DEBUG] Game status:', this.game.status);
+      console.log('🔍 [SOLO DEBUG] Solo team:', this.game.soloTeam);
+      console.log('🔍 [SOLO DEBUG] Solo turn guesses remaining:', this.game.soloTurnGuessesRemaining);
+      console.log('🔍 [SOLO DEBUG] Solo clues remaining:', this.game.soloCluesRemaining);
+      const playerTeam = getPlayerTeam(this.game, playerId);
+      const playerRole = getPlayerRole(this.game, playerId);
+      
+      console.log('🔍 [SOLO DEBUG] Player team:', playerTeam);
+      console.log('🔍 [SOLO DEBUG] Player role:', playerRole);
+      console.log('🔍 [SOLO DEBUG] Expected team:', this.game.soloTeam);
+      
+      if (playerRole !== 'operative' || playerTeam !== this.game.soloTeam) {
+        console.log('❌ [SOLO DEBUG] Player check failed - wrong role or team');
+        return { success: false };
+      }
+
+      if (this.game.status !== 'playing' || (this.game.soloTurnGuessesRemaining || 0) <= 0) {
+        console.log('❌ [SOLO DEBUG] Game state check failed');
+        console.log('   Status:', this.game.status);
+        console.log('   Turn guesses:', this.game.soloTurnGuessesRemaining);
+        return { success: false };
+      }
+
+      const card = this.game.board.find(c => c.id === cardId);
+      console.log('🔍 [SOLO DEBUG] Card found:', card ? 'yes' : 'no');
+      console.log('🔍 [SOLO DEBUG] Card already revealed:', card?.isRevealed);
+      if (!card || card.isRevealed) {
+        console.log('❌ [SOLO DEBUG] Card check failed - not found or already revealed');
+        return { success: false };
+      }
+
+      // Reveal the card
+      card.isRevealed = true;
+      card.revealedBy = playerId;
+      this.game.soloTurnGuessesRemaining = (this.game.soloTurnGuessesRemaining || 0) - 1;
+
+      let gameEnded = false;
+      let winner: TeamColor | undefined;
+
+      // Solo mode penalties and win conditions
+      if (card.team === 'assassin') {
+        // Immediate loss
+        this.game.status = 'finished';
+        this.game.winner = 'assassin'; // Indicates loss
+        gameEnded = true;
+        console.log('💀 Solo game ended - hit assassin');
+      } else if (card.team === this.game.soloTeam) {
+        // Correct team card - check if all found
+        const soloTeamCards = getSoloTeamCards(this.game);
+        const revealedSoloCards = soloTeamCards.filter(c => c.isRevealed).length;
+        
+        if (revealedSoloCards === soloTeamCards.length) {
+          // Victory!
+          this.game.status = 'finished';
+          this.game.winner = this.game.soloTeam;
+          gameEnded = true;
+          console.log(`🎉 Solo victory - found all ${this.game.soloTeam} cards!`);
+        } else {
+          // Continue playing, no penalty for correct cards
+          console.log(`✅ Correct ${this.game.soloTeam} card (${revealedSoloCards}/${soloTeamCards.length})`);
+        }
+      } else if (card.team === 'neutral') {
+        // Neutral card - end turn only (no clue penalty)
+        this.game.soloTurnGuessesRemaining = 0;
+        this.game.currentClue = undefined; // Clear clue to allow new one
+        console.log(`😐 Neutral card - turn ended, spymaster can give new clue`);
+      } else {
+        // Opposing team card - end turn AND lose 1 clue
+        this.game.soloTurnGuessesRemaining = 0;
+        this.game.soloCluesRemaining = (this.game.soloCluesRemaining || 5) - 1;
+        this.game.currentClue = undefined; // Clear clue to allow new one
+        console.log(`❌ Enemy card - turn ended, lost 1 clue (${this.game.soloCluesRemaining} remaining), spymaster can give new clue`);
+      }
+
+      // Check if out of clues (lose condition)
+      if (!gameEnded && (this.game.soloCluesRemaining || 0) <= 0) {
+        this.game.status = 'finished';
+        this.game.winner = 'neutral'; // Indicates loss by running out of clues
+        gameEnded = true;
+        console.log('💔 Solo game ended - out of clues');
+      }
+
+      this.updateTimestamp();
+      return { success: true, card, gameEnded, winner };
+    }
+    
+    // Classic mode logic
     const playerTeam = getPlayerTeam(this.game, playerId);
     const playerRole = getPlayerRole(this.game, playerId);
     
@@ -294,9 +406,19 @@ export class CodenamesGameModel {
   endTurn(): boolean {
     if (this.game.status !== 'playing') return false;
 
-    this.game.currentTurn = this.game.currentTurn === 'red' ? 'blue' : 'red';
-    this.game.guessesRemaining = 0;
-    this.game.currentClue = undefined;
+    // In solo mode, don't switch teams - reset to the solo team
+    if (this.game.isSoloMode) {
+      this.game.currentTurn = this.game.soloTeam || 'red'; // Keep solo team active
+      this.game.soloTurnGuessesRemaining = 0; // Reset turn guesses
+      this.game.currentClue = undefined; // Clear current clue
+      console.log(`🔄 Solo mode turn reset - ${this.game.soloTeam} team can give new clue`);
+    } else {
+      // Classic mode - switch teams normally
+      this.game.currentTurn = this.game.currentTurn === 'red' ? 'blue' : 'red';
+      this.game.guessesRemaining = 0;
+      this.game.currentClue = undefined;
+    }
+    
     this.updateTimestamp();
     return true;
   }

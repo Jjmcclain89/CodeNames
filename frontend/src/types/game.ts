@@ -1,4 +1,5 @@
 // Frontend Game Types - Re-exports shared types plus UI-specific types
+// Re-export solo mode helpers
 export * from '../../../shared/types/game';
 
 // UI-specific types

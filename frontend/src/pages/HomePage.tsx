@@ -5,7 +5,7 @@ import GamesList from '../components/GamesList';
 
 const HomePage: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 lg:overflow-hidden relative lg:flex lg:flex-col">
+    <div className="pt-16 min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 lg:overflow-hidden relative lg:flex lg:flex-col">
       {/* Background Pattern - Matching GameBoard */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>

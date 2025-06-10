@@ -1,6 +1,6 @@
 // Game Service - Manages games and integrates with existing storage
 import { CodenamesGameModel } from '../models/Game';
-import { CodenamesGame, TeamColor, PlayerRole, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid } from '../../../shared/types/game';
+import { CodenamesGame, TeamColor, PlayerRole, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, isSoloMode } from '../../../shared/types/game';
 
 interface GameWithMeta {
   model: CodenamesGameModel;
@@ -285,7 +285,7 @@ export class GameService {
     console.log('🎯 [GAMESERVICE] Can start result:', canStart);
     
     if (!canStart) {
-      return { success: false, error: 'Cannot start game - need at least one valid team (spymaster + operatives)' };
+      return { success: false, error: 'Cannot start game - need at least one complete team (spymaster + operatives)' };
     }
 
     console.log('🎯 [GAMESERVICE] Starting game...');
