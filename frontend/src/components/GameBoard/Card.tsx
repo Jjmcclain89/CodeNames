@@ -34,7 +34,7 @@ const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolea
       case 'neutral':
         return 'bg-gradient-to-br from-slate-700/80 via-slate-600/40 to-slate-700/80 border-slate-400/50 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 shadow-lg hover:shadow-slate-500/30 backdrop-blur-sm';
       case 'assassin':
-        return 'bg-gradient-to-br from-slate-800/80 via-red-900/60 to-slate-800/80 border-red-500 text-red-300 hover:from-red-900/80 hover:to-red-800/80 shadow-lg hover:shadow-red-600/50 font-bold backdrop-blur-sm';
+        return 'bg-gradient-to-br from-slate-800/80 via-black-900/60 to-slate-800/80 border-red-500 text-red-300 hover:from-red-900/80 hover:to-red-800/80 shadow-lg hover:shadow-red-600/50 font-bold backdrop-blur-sm';
       default:
         return 'bg-gradient-to-br from-slate-700/80 to-slate-600/80 border-slate-400 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 backdrop-blur-sm';
     }

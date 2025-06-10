@@ -1,711 +1,1265 @@
 ================================================================================
 COMBINED FILES FOR CLAUDE IMPORT
-Generated from 1 files
+Generated from 5 files
 ================================================================================
 
 TABLE OF CONTENTS:
- 1. backend/src/socket/socketHandlers.ts
+ 1. frontend/src/components/GameBoard/GameBoard.tsx
+ 2. frontend/src/components/GameBoard/Card.tsx
+ 3. frontend/src/pages/GamePage.tsx
+ 4. shared/types/game.ts
+ 5. frontend/tailwind.config.js
 
 ================================================================================
 
 ============================================================
-FILE: backend/src/socket/socketHandlers.ts
-PATH: C:\Users\Jmccl\Coding Projects\CodeNames\backend\src\socket\socketHandlers.ts
-SIZE: 27232 characters
+FILE: frontend/src/components/GameBoard/GameBoard.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameBoard\GameBoard.tsx
+SIZE: 23273 characters
 ============================================================
-import { Server, Socket } from 'socket.io';
-import { PrismaClient } from '@prisma/client';
-import { gameLobbies } from '../routes/gameLobbies';
-import { gameService } from '../services/gameService';
+import React, { useState, useEffect } from 'react';
+import { CodenamesGame, GamePlayer, TeamColor, PlayerRole, isSoloMode, getSoloTeam } from '../../types/game';
+import Card from './Card';
+import { gameService } from '../../services/gameService';
 
-interface AuthenticatedSocket extends Socket {
-  userId?: string;
-  username?: string;
-  currentRoom?: string;
+interface GameBoardProps {
+  gameState: CodenamesGame;
+  currentPlayer: GamePlayer | null;
+  isConnected: boolean;
 }
 
-// Get access to users map from index.ts
-let externalUsersMap: Map<string, any> | null = null;
+export const GameBoard: React.FC<GameBoardProps> = ({
+  gameState,
+  currentPlayer,
+  isConnected
+}) => {
+  const [clueWord, setClueWord] = useState('');
+  const [clueNumber, setClueNumber] = useState(1);
+  const [chatVisible, setChatVisible] = useState(false);
+  const [playersVisible, setPlayersVisible] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
-// Variables needed for socket handlers (local fallbacks)
-const users = new Map<string, any>();
-const rooms = new Map<string, any>();
-const connectedUsers = new Map<string, any>();
-const userRooms = new Map<string, string>();
-
-// Function to sync users map from index.ts
-export const setUsersMap = (usersMapFromIndex: Map<string, any>) => {
-    externalUsersMap = usersMapFromIndex;
-    console.log('📋 socketHandlers.ts received users map with', usersMapFromIndex.size, 'users');
-};
-
-// Helper functions
-function findUserByToken(token: string) {
-    if (!token) {
-        return null;
+  // Reset clue input when turn changes or clue is given
+  useEffect(() => {
+    if (gameState.currentClue) {
+      setClueWord('');
+      setClueNumber(1);
     }
+  }, [gameState.currentClue]);
 
-    // Use the shared users map from index.ts
-    if (externalUsersMap) {
-        for (const [userId, userData] of externalUsersMap.entries()) {
-            if (userData.token === token) {
-                console.log('✅ Found user in shared users map:', userData.username);
-                return userData;
-            }
-        }
-        console.log('❌ User not found in shared users map for token:', token.substring(0, 20) + '...');
+  const stats = gameService.getTeamStats(gameState);
+  const isSpymaster = currentPlayer?.role === 'spymaster';
+  const isMyTurn = gameService.isPlayerTurn(gameState, currentPlayer);
+  const canGiveClue = gameService.canPlayerGiveClue(gameState, currentPlayer);
+  const canRevealCard = gameService.canPlayerRevealCard(gameState, currentPlayer);
+
+  // Game action handlers
+  const handleCardClick = (cardId: string) => {
+    console.log('🎯 Revealing card:', cardId);
+    gameService.revealCard(gameState.gameCode, cardId);
+  };
+
+  const handleGiveClue = () => {
+    if (clueWord.trim() && clueNumber >= 1 && clueNumber <= 9) {
+      console.log('🎯 Giving clue:', clueWord.trim(), clueNumber);
+      gameService.giveClue(gameState.gameCode, clueWord.trim(), clueNumber);
+    }
+  };
+
+  const handleEndTurn = () => {
+    console.log('🎯 Ending turn');
+    gameService.endTurn(gameState.gameCode);
+  };
+
+  const handleStartGame = () => {
+    console.log('🎯 Starting game');
+    gameService.startGame();
+  };
+
+  const handleJoinTeam = (team: TeamColor, role: PlayerRole) => {
+    console.log('Join team:', team, role);
+    // TODO: Implement via socket
+  };
+
+  const getPlayersByTeam = (team: TeamColor) => {
+    return gameState.players.filter(p => p.team === team);
+  };
+
+  const hasSpymaster = (team: TeamColor) => {
+    return gameState.players.some(p => p.team === team && p.role === 'spymaster');
+  };
+
+  // Get board glow effect based on current turn and mode
+  const getBoardGlowEffect = () => {
+    if (gameState.isSoloMode) {
+      // Solo mode - use team color
+      if (gameState.soloTeam === 'red') {
+        return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+      } else {
+        return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+      }
     } else {
-        console.log('❌ External users map not available!');
+      // Classic mode - use current turn
+      if (gameState.currentTurn === 'red') {
+        return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+      } else {
+        return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+      }
     }
+  };
 
-    return null;
-}
-
-function getOrCreateGlobalRoom() {
-    if (!rooms.has('GLOBAL')) {
-        const globalRoom = {
-            code: 'GLOBAL',
-            users: new Map(),
-            messages: [],
-            createdAt: new Date().toISOString(),
-        };
-        rooms.set('GLOBAL', globalRoom);
-    }
-    return rooms.get('GLOBAL');
-}
-
-export const handleSocketConnection = (io: Server, socket: AuthenticatedSocket, prisma: PrismaClient) => {
-    console.log('📡 Socket connected via socketHandlers.ts:', socket.id);
-
-    // Authentication handler
-    socket.on('authenticate', (token: string) => {
-        console.log('🔐 AUTHENTICATION REQUEST via socketHandlers.ts');
-        console.log('🔐 Socket ID:', socket.id);
-        console.log('🔐 Token received:', token ? token.substring(0, 20) + '...' : 'null');
-        console.log('🔐 External users map available:', !!externalUsersMap);
-        console.log('🔐 External users map size:', externalUsersMap ? externalUsersMap.size : 'N/A');
+  if (gameState.status === 'waiting') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 p-4 relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+        </div>
         
-        const user = findUserByToken(token);
-        console.log('🔐 findUserByToken result:', user ? {
-            id: user.id,
-            username: user.username
-        } : 'null');
-
-        if (user) {
-            // Store connected user in THIS socketHandlers.ts connectedUsers map
-            const connectedUser = {
-                ...user,
-                socketId: socket.id,
-                connectedAt: new Date().toISOString(),
-            };
+        <div className="flex flex-col items-center justify-center min-h-screen">
+          <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-2xl border border-slate-600/50 p-8 max-w-4xl w-full backdrop-blur-lg relative z-10">
             
-            connectedUsers.set(socket.id, connectedUser);
-            console.log('✅ Stored user in connectedUsers map:', connectedUser.username);
-            console.log('✅ connectedUsers map now has', connectedUsers.size, 'users');
-
-            // Join global room automatically
-            const globalRoom = getOrCreateGlobalRoom();
-            globalRoom.users.set(socket.id, user);
-            socket.join('GLOBAL');
-
-            socket.emit('authenticated', {
-                success: true,
-                user: user,
-                lobbyCode: 'GLOBAL',
-            });
-
-            // Notify others in global room
-            socket.to('GLOBAL').emit('user-joined', {
-                user: user,
-                message: `${user.username} joined the chat`,
-            });
-
-            // Send current users in room
-            const roomUsers = Array.from(globalRoom.users.values());
-            io.to('GLOBAL').emit('room-users', { users: roomUsers });
-
-            // Send recent messages
-            socket.emit('recent-messages', {
-                messages: globalRoom.messages.slice(-10),
-            });
-
-            console.log('✅ Authentication completed successfully for:', user.username);
-        } else {
-            console.log('❌ Authentication failed - user not found');
-            socket.emit('authenticated', {
-                success: false,
-                error: 'Invalid token',
-            });
-        }
-    });
-
-    // Global chat message handler
-    socket.on('send-message', (data: any) => {
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('error', { message: 'Not authenticated' });
-            return;
-        }
-
-        const message = {
-            id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-            username: user.username,
-            userId: user.id,
-            text: data.message,
-            timestamp: new Date().toISOString(),
-        };
-
-        const globalRoom = getOrCreateGlobalRoom();
-        globalRoom.messages.push(message);
-
-        if (globalRoom.messages.length > 50) {
-            globalRoom.messages = globalRoom.messages.slice(-50);
-        }
-
-        io.to('GLOBAL').emit('new-message', message);
-        console.log(`💬 Message from ${user.username}: ${data.message}`);
-    });
-
-    // Join lobby
-    socket.on('join-lobby', (lobbyCode: string) => {
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('lobby-error', 'Not authenticated');
-            return;
-        }
-
-        console.log(`🏠 User ${user.username} joining lobby: ${lobbyCode}`);
-
-        // Leave any previous rooms (except GLOBAL)
-        const socketRooms = Array.from(socket.rooms) as string[];
-        socketRooms.forEach((room) => {
-            if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
-                socket.leave(room);
-            }
-        });
-
-        // Join the new room
-        socket.join(lobbyCode.toUpperCase());
-        userRooms.set(socket.id, lobbyCode.toUpperCase());
-
-        // Notify others in room
-        socket.to(lobbyCode.toUpperCase()).emit('player-joined-lobby', {
-            player: { username: user.username, id: user.id },
-            message: `${user.username} joined the room`,
-        });
-
-        // Emit current lobby state if it exists
-        const lobby = gameLobbies.get(lobbyCode.toUpperCase());
-        if (lobby) {
-            socket.emit('lobby-updated', lobby);
-        }
-    });
-
-
-    // Join game room (for active games)
-    socket.on('join-game', (gameId: string) => {
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('game:error', 'Not authenticated');
-            return;
-        }
-
-        console.log(`🎮 User ${user.username} joining game: ${gameId}`);
-
-        // Leave any previous rooms (except GLOBAL)
-        const socketRooms = Array.from(socket.rooms) as string[];
-        socketRooms.forEach((room) => {
-            if (room !== socket.id && room !== 'GLOBAL' && room.length === 6) {
-                socket.leave(room);
-            }
-        });
-
-        // Join the game room
-        const gameRoomCode = gameId.toUpperCase();
-        socket.join(gameRoomCode);
-        userRooms.set(socket.id, gameRoomCode);
-
-        console.log(`✅ ${user.username} joined game room: ${gameRoomCode}`);
-
-        // Send current game state if it exists
-        const game = gameService.getGameByCode(gameRoomCode);
-        if (game) {
-            const gameState = game.getGame();
-            socket.emit('game:state-updated', gameState);
-            console.log(`📡 Sent current game state to ${user.username}`);
-        } else {
-            console.log(`❌ Game ${gameRoomCode} not found`);
-            socket.emit('game:error', 'Game not found');
-        }
-    });
-
-    // Join team in lobby
-    socket.on('lobby:join-team', (data: { lobbyId: string; team: string; role: string }) => {
-        console.log('🎯🎯🎯 LOBBY:JOIN-TEAM EVENT RECEIVED via handlers! 🎯🎯🎯');
-        console.log('🔍 Raw data received:', JSON.stringify(data, null, 2));
-        
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            console.log('❌ User not found in connectedUsers map!');
-            socket.emit('lobby-error', 'Not authenticated');
-            return;
-        }
-
-        console.log(`👥 ${user.username} joining ${data.team} team as ${data.role} in lobby ${data.lobbyId}`);
-
-        const lobby = gameLobbies.get(data.lobbyId.toUpperCase());
-        if (!lobby) {
-            console.log('❌ Lobby not found!');
-            socket.emit('lobby-error', 'Lobby not found');
-            return;
-        }
-
-        const player = {
-            id: user.id,
-            username: user.username,
-            isOnline: true,
-            socketId: socket.id,
-        };
-
-        // Initialize teams if they don't exist
-        if (!lobby.redTeam) {
-            lobby.redTeam = { operatives: [] };
-        }
-        if (!lobby.blueTeam) {
-            lobby.blueTeam = { operatives: [] };
-        }
-
-        // Remove player from any existing team first
-        if (lobby.redTeam.spymaster?.id === user.id) {
-            lobby.redTeam.spymaster = undefined;
-        }
-        if (lobby.blueTeam.spymaster?.id === user.id) {
-            lobby.blueTeam.spymaster = undefined;
-        }
-        lobby.redTeam.operatives = lobby.redTeam.operatives.filter((p: any) => p.id !== user.id);
-        lobby.blueTeam.operatives = lobby.blueTeam.operatives.filter((p: any) => p.id !== user.id);
-
-        // Add player to new team and role
-        if (data.team === 'red') {
-            if (data.role === 'spymaster') {
-                lobby.redTeam.spymaster = player;
-            } else if (data.role === 'operative') {
-                lobby.redTeam.operatives.push(player);
-            }
-        } else if (data.team === 'blue') {
-            if (data.role === 'spymaster') {
-                lobby.blueTeam.spymaster = player;
-            } else if (data.role === 'operative') {
-                lobby.blueTeam.operatives.push(player);
-            }
-        }
-
-        lobby.updatedAt = new Date().toISOString();
-        io.to(data.lobbyId.toUpperCase()).emit('lobby-updated', lobby);
-        console.log(`✅ ${user.username} joined ${data.team} team as ${data.role}`);
-    });
-
-    // Leave team in lobby
-    socket.on('lobby:leave-team', (data: { lobbyId: string; team: string; role: string }) => {
-        console.log('🎯🎯🎯 LOBBY:LEAVE-TEAM EVENT RECEIVED via handlers! 🎯🎯🎯');
-        
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('lobby-error', 'Not authenticated');
-            return;
-        }
-
-        const { lobbyId, team, role } = data;
-        const lobby = gameLobbies.get(lobbyId.toUpperCase());
-        if (!lobby) {
-            socket.emit('lobby-error', 'Lobby not found');
-            return;
-        }
-
-        let removed = false;
-
-        // Remove from red team
-        if (team === 'red' && lobby.redTeam) {
-            if (role === 'spymaster' && lobby.redTeam.spymaster?.id === user.id) {
-                lobby.redTeam.spymaster = undefined;
-                removed = true;
-            } else if (role === 'operative') {
-                const originalLength = lobby.redTeam.operatives.length;
-                lobby.redTeam.operatives = lobby.redTeam.operatives.filter((p: any) => p.id !== user.id);
-                removed = lobby.redTeam.operatives.length < originalLength;
-            }
-        }
-        
-        // Remove from blue team
-        if (team === 'blue' && lobby.blueTeam) {
-            if (role === 'spymaster' && lobby.blueTeam.spymaster?.id === user.id) {
-                lobby.blueTeam.spymaster = undefined;
-                removed = true;
-            } else if (role === 'operative') {
-                const originalLength = lobby.blueTeam.operatives.length;
-                lobby.blueTeam.operatives = lobby.blueTeam.operatives.filter((p: any) => p.id !== user.id);
-                removed = lobby.blueTeam.operatives.length < originalLength;
-            }
-        }
-
-        if (removed) {
-            lobby.updatedAt = new Date().toISOString();
-            io.to(lobbyId.toUpperCase()).emit('lobby-updated', lobby);
-            console.log(`✅ ${user.username} successfully left ${team} team as ${role}`);
-        }
-    });
-
-    // Start game from lobby
-    socket.on('lobby:start-game', (data: { lobbyId: string }) => {
-        console.log('🚀 lobby:start-game via handlers');
-        
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('lobby-error', 'Not authenticated');
-            return;
-        }
-
-        const { lobbyId } = data;
-        console.log(`🚀 ${user.username} attempting to start game in lobby ${lobbyId}`);
-
-        const lobby = gameLobbies.get(lobbyId.toUpperCase());
-        if (!lobby) {
-            console.log('❌ Lobby not found:', lobbyId);
-            socket.emit('lobby-error', 'Lobby not found');
-            return;
-        }
-
-        // Only lobby owner can start the game
-        if (lobby.owner !== user.id) {
-            console.log(`❌ ${user.username} (${user.id}) tried to start game but is not owner (${lobby.owner})`);
-            socket.emit('lobby-error', 'Only the lobby owner can start the game');
-            return;
-        }
-
-        // Validate teams
-        const redTeamValid = lobby.redTeam && 
-                            lobby.redTeam.spymaster && 
-                            lobby.redTeam.operatives.length > 0;
-                            
-        const blueTeamValid = lobby.blueTeam && 
-                             lobby.blueTeam.spymaster && 
-                             lobby.blueTeam.operatives.length > 0;
-
-        console.log('🔍 Team validation:');
-        console.log(`  Red team valid: ${redTeamValid}`);
-        console.log(`  Blue team valid: ${blueTeamValid}`);
-
-        if (!redTeamValid && !blueTeamValid) {
-            console.log('❌ No valid teams found');
-            socket.emit('lobby-error', 'Need at least one valid team (spymaster + operatives) to start');
-            return;
-        }
-
-        // Create actual game in gameService
-        try {
-            console.log(`🎮 Creating game for lobby ${lobbyId}`);
+            {/* Current Player Status */}
+            {currentPlayer && (
+              <div className="text-center mb-6 p-4 bg-slate-700/50 rounded-lg border border-slate-600/50">
+                <p className="text-lg text-slate-200">
+                  Welcome, <span className="font-semibold text-amber-200">{currentPlayer.username}</span>!
+                </p>
+                {currentPlayer.team !== 'neutral' && (
+                  <p className="text-sm text-slate-300">
+                    You are on the{' '}
+                    <span className={`font-semibold ${currentPlayer.team === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                      {currentPlayer.team}
+                    </span>{' '}
+                    team as a <span className="font-semibold">{currentPlayer.role}</span>
+                  </p>
+                )}
+              </div>
+            )}
             
-            // Create or get the game for this room
-            const game = gameService.createGameForRoom(lobbyId.toUpperCase());
-            console.log(`🎮 Game created with ID: ${game.getId()}`);
-            
-            // Transfer lobby teams to game
-            if (lobby.redTeam || lobby.blueTeam) {
-                console.log('🔄 Converting and transferring lobby teams to game...');
+            {/* Team Selection */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              {/* Red Team */}
+              <div className="bg-gradient-to-br from-red-900/60 to-red-800/40 border-2 border-red-500/50 rounded-lg p-6 backdrop-blur-sm">
+                <h3 className="text-2xl font-semibold text-red-200 mb-4 text-center">
+                  🔴 Red Team
+                </h3>
+                <div className="space-y-3 mb-4">
+                  <button
+                    onClick={() => handleJoinTeam('red', 'spymaster')}
+                    className="w-full bg-red-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    disabled={hasSpymaster('red')}
+                  >
+                    {hasSpymaster('red') ? '📻 Spymaster Taken' : '📻 Join as Spymaster'}
+                  </button>
+                  <button
+                    onClick={() => handleJoinTeam('red', 'operative')}
+                    className="w-full bg-red-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-red-500 transition-colors"
+                  >
+                    🕵️ Join as Operative
+                  </button>
+                </div>
+                <div className="text-sm text-slate-300">
+                  <div className="font-medium mb-2">Team Members:</div>
+                  {getPlayersByTeam('red').length === 0 ? (
+                    <p className="text-slate-400 italic">No players yet</p>
+                  ) : (
+                    getPlayersByTeam('red').map(player => (
+                      <div key={player.id} className="flex justify-between items-center py-1">
+                        <span>{player.username}</span>
+                        <span className="text-red-400 font-medium">
+                          {player.role === 'spymaster' ? '📻' : '🕵️'} {player.role}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Blue Team */}
+              <div className="bg-gradient-to-br from-blue-900/60 to-blue-800/40 border-2 border-blue-500/50 rounded-lg p-6 backdrop-blur-sm">
+                <h3 className="text-2xl font-semibold text-blue-200 mb-4 text-center">
+                  🔵 Blue Team
+                </h3>
+                <div className="space-y-3 mb-4">
+                  <button
+                    onClick={() => handleJoinTeam('blue', 'spymaster')}
+                    className="w-full bg-blue-500 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    disabled={hasSpymaster('blue')}
+                  >
+                    {hasSpymaster('blue') ? '📻 Spymaster Taken' : '📻 Join as Spymaster'}
+                  </button>
+                  <button
+                    onClick={() => handleJoinTeam('blue', 'operative')}
+                    className="w-full bg-blue-400 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-500 transition-colors"
+                  >
+                    🕵️ Join as Operative
+                  </button>
+                </div>
+                <div className="text-sm text-slate-300">
+                  <div className="font-medium mb-2">Team Members:</div>
+                  {getPlayersByTeam('blue').length === 0 ? (
+                    <p className="text-slate-400 italic">No players yet</p>
+                  ) : (
+                    getPlayersByTeam('blue').map(player => (
+                      <div key={player.id} className="flex justify-between items-center py-1">
+                        <span>{player.username}</span>
+                        <span className="text-blue-400 font-medium">
+                          {player.role === 'spymaster' ? '📻' : '🕵️'} {player.role}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Start Game Button */}
+            <div className="text-center">
+              <button
+                onClick={handleStartGame}
+                className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed shadow-lg"
+                disabled={gameState.players.length === 0}
+              >
+                🚀 Start Game
+              </button>
+              <p className="text-sm text-slate-400 mt-3">
+                Need players on both teams to start
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 overflow-hidden relative">
+      {/* Background Pattern */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+      </div>
+
+      {/* Centered Layout Container */}
+      <div className="min-h-screen flex justify-center p-4">
+        <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
+          
+          {/* Icons positioned above the game board */}
+          <div className="flex mb-2">
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setChatVisible(!chatVisible)}
+                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
+                  chatVisible 
+                    ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white border-emerald-400/50' 
+                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
+                }`}
+                title="Chat"
+              >
+                💬
+              </button>
+              <button
+                onClick={() => setPlayersVisible(!playersVisible)}
+                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
+                  playersVisible 
+                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-400/50' 
+                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
+                }`}
+                title="Players"
+              >
+                👥
+              </button>
+              <button
+                onClick={() => setInfoVisible(!infoVisible)}
+                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
+                  infoVisible 
+                    ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white border-amber-400/50' 
+                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
+                }`}
+                title="Info"
+              >
+                ℹ️
+              </button>
+              <button
+                onClick={() => setSettingsVisible(!settingsVisible)}
+                className="w-10 h-10 bg-gradient-to-br from-slate-700/80 to-slate-800/80 rounded-lg shadow-lg border border-slate-600/50 flex items-center justify-center hover:from-slate-600/80 hover:to-slate-700/80 transition-all duration-200 backdrop-blur-sm relative"
+                title="Settings"
+              >
+                <span className="text-slate-200 text-sm">⚙️</span>
                 
-                // Convert lobby teams to game teams
-                const convertedRedTeam = (lobby.redTeam && lobby.redTeam.spymaster) ? {
-                    spymaster: {
-                        id: lobby.redTeam.spymaster.id,
-                        username: lobby.redTeam.spymaster.username,
-                        isOnline: lobby.redTeam.spymaster.isOnline,
-                        socketId: lobby.redTeam.spymaster.socketId || '',
-                    },
-                    operatives: lobby.redTeam.operatives.map((p: any) => ({
-                        id: p.id,
-                        username: p.username,
-                        isOnline: p.isOnline,
-                        socketId: p.socketId || '',
-                    }))
-                } : undefined;
-                
-                const convertedBlueTeam = (lobby.blueTeam && lobby.blueTeam.spymaster) ? {
-                    spymaster: {
-                        id: lobby.blueTeam.spymaster.id,
-                        username: lobby.blueTeam.spymaster.username,
-                        isOnline: lobby.blueTeam.spymaster.isOnline,
-                        socketId: lobby.blueTeam.spymaster.socketId || '',
-                    },
-                    operatives: lobby.blueTeam.operatives.map((p: any) => ({
-                        id: p.id,
-                        username: p.username,
-                        isOnline: p.isOnline,
-                        socketId: p.socketId || '',
-                    }))
-                } : undefined;
-                
-                game.setTeams(convertedRedTeam, convertedBlueTeam);
-                console.log('✅ Teams transferred successfully');
-                
-                // Add all players to gameService playerGameMap
-                console.log('🔗 Adding players to gameService playerGameMap...');
-                
-                // Add red team players
-                if (convertedRedTeam) {
-                    if (convertedRedTeam.spymaster) {
-                        gameService.addPlayerToGame(game.getId(), convertedRedTeam.spymaster.id, convertedRedTeam.spymaster.username, convertedRedTeam.spymaster.socketId);
-                        console.log(`  Added red spymaster: ${convertedRedTeam.spymaster.username}`);
-                    }
-                    convertedRedTeam.operatives.forEach((operative: any) => {
-                        gameService.addPlayerToGame(game.getId(), operative.id, operative.username, operative.socketId);
-                        console.log(`  Added red operative: ${operative.username}`);
-                    });
-                }
-                
-                // Add blue team players
-                if (convertedBlueTeam) {
-                    if (convertedBlueTeam.spymaster) {
-                        gameService.addPlayerToGame(game.getId(), convertedBlueTeam.spymaster.id, convertedBlueTeam.spymaster.username, convertedBlueTeam.spymaster.socketId);
-                        console.log(`  Added blue spymaster: ${convertedBlueTeam.spymaster.username}`);
-                    }
-                    convertedBlueTeam.operatives.forEach((operative: any) => {
-                        gameService.addPlayerToGame(game.getId(), operative.id, operative.username, operative.socketId);
-                        console.log(`  Added blue operative: ${operative.username}`);
-                    });
-                }
-                
-                console.log('✅ All players added to gameService');
-            }
-            
-            // Start the game
-            console.log('🎮 Starting the game...');
-            const startResult = game.startGame();
-            console.log(`🎮 Game start result: ${startResult}`);
-            
-            if (!startResult) {
-                throw new Error('Game.startGame() returned false');
-            }
-            
-            // Final verification
-            const finalGameState = game.getGame();
-            console.log('🎮 Final game state:');
-            console.log(`  Game status: ${finalGameState?.status}`);
-            
-            if (finalGameState?.status === 'playing') {
-                console.log(`✅ Game ${lobbyId} started successfully with status 'playing'`);
-                
-                // Emit game-started event
-                io.to(lobbyId.toUpperCase()).emit('game-started', {
-                    redirectTo: `/game/${lobbyId.toUpperCase()}`,
-                    gameId: lobbyId.toUpperCase()
-                });
-                
-                console.log(`✅ Game started successfully for lobby ${lobbyId}`);
-            } else {
-                throw new Error(`Game status is '${finalGameState?.status}', expected 'playing'`);
-            }
-            
-        } catch (error: any) {
-            console.error(`❌ Error creating game for lobby ${lobbyId}:`, error);
-            socket.emit('lobby-error', `Failed to start game: ${error.message || 'Unknown error'}`);
-        }
-    });
+                {/* Settings Dropdown */}
+                {settingsVisible && (
+                  <div className="absolute top-12 right-0 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-lg shadow-2xl border border-slate-600/50 p-3 min-w-32 backdrop-blur-lg z-60">
+                    <button
+                      onClick={() => window.location.href = '/'}
+                      className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left"
+                    >
+                      🏠 Logout
+                    </button>
+                  </div>
+                )}
+              </button>
+            </div>
+          </div>
+          
+          {/* Current Clue Display */}
+          {gameState.currentClue && (
+            <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
+              <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                💡 {gameState.currentClue.word} ({gameState.currentClue.number})
+              </span>
+              {gameState.guessesRemaining > 0 && (
+                <span className="ml-3 text-sm text-violet-300">
+                  {gameState.guessesRemaining} left
+                </span>
+              )}
+            </div>
+          )}
 
-    // =================
-    // GAME ACTION HANDLERS
-    // =================
-    
-    // Give clue handler
-    socket.on('game:give-clue', (data: { gameId: string; word: string; number: number }) => {
-        console.log('🎯 game:give-clue received:', data);
-        
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('game:error', 'Not authenticated');
-            return;
-        }
+          {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
+          <div className={`relative bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
+            {/* Board Game Texture with Turn Indicator */}
+            <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
+            <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
+            {/* Turn Indicator Overlay */}
+            <div className={`absolute inset-0 rounded-2xl pointer-events-none transition-all duration-700 ${
+              gameState.currentTurn === 'red' 
+                ? 'bg-gradient-to-br from-red-500/10 via-transparent to-red-500/5' 
+                : 'bg-gradient-to-br from-blue-500/10 via-transparent to-blue-500/5'
+            }`}></div>
+            <div className="relative z-10">
+              <div className="grid grid-cols-5 gap-3">
+                {gameState.board && Array.isArray(gameState.board) ? gameState.board
+                  .sort((a, b) => a.position - b.position)
+                  .map((card) => (
+                    <Card
+                      key={card.id}
+                      card={card}
+                      isSpymaster={isSpymaster}
+                      onClick={canRevealCard ? handleCardClick : undefined}
+                      disabled={!canRevealCard}
+                    />
+                  )) : (
+                    <div className="text-center text-white">
+                      <div className="text-xl mb-2">⚠️ Board not loaded</div>
+                      <div className="text-sm opacity-75">Game board data is missing</div>
+                    </div>
+                  )}
+              </div>
+            </div>
+          </div>
 
-        const { gameId, word, number } = data;
-        if (!gameId || !word || !number) {
-            socket.emit('game:error', 'Missing required parameters');
-            return;
-        }
+          {/* Controls Below Board */}
+          {canGiveClue && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 w-full max-w-2xl backdrop-blur-lg border border-slate-600/50">
+              <div className="flex items-end space-x-3">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    value={clueWord}
+                    onChange={(e) => setClueWord(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 placeholder-slate-400"
+                    placeholder="Clue word..."
+                    required
+                  />
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  max="9"
+                  value={clueNumber}
+                  onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
+                  className="w-16 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-center"
+                />
+                <button
+                  onClick={handleGiveClue}
+                  className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-2 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold shadow-lg"
+                >
+                  Give Clue
+                </button>
+              </div>
+            </div>
+          )}
 
-        try {
-            // Find game directly by gameId (much cleaner!)
-            const game = gameService.getGameByCode(gameId.toUpperCase());
-            if (!game) {
-                console.log(`❌ Game not found: ${gameId}`);
-                socket.emit('game:error', 'Game not found');
-                return;
-            }
+          {/* Solo Mode Controls */}
+          {gameState.isSoloMode && canRevealCard && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
+              <p className="text-slate-200 mb-3">
+                🎯 Click a card to reveal it ({gameState.soloTurnGuessesRemaining || 0} guesses this turn, {gameState.soloCluesRemaining || 0} clues left)
+              </p>
+              <div className="text-sm text-slate-400 mb-3">
+                <span className="text-emerald-400">✅ Your team: No penalty</span> • 
+                <span className="text-yellow-400"> ⚪ Neutral: End turn</span> • 
+                <span className="text-red-400"> ❌ Enemy: End turn + lose clue</span> • 
+                <span className="text-red-600"> 💀 Assassin: Game over</span>
+              </div>
+            </div>
+          )}
+          
+          {/* Classic Mode Controls */}
+          {!gameState.isSoloMode && canRevealCard && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl shadow-xl p-4 text-center backdrop-blur-lg border border-slate-600/50">
+              <p className="text-slate-200 mb-3">
+                🎯 Click a card to guess ({gameState.guessesRemaining} left)
+              </p>
+              <button
+                onClick={handleEndTurn}
+                className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-orange-700 transition-colors font-semibold shadow-lg"
+              >
+                ⏭️ End Turn
+              </button>
+            </div>
+          )}
 
-            // Call giveClue on the game object directly
-            const clueResult = game.giveClue(user.id, word, number);
-            
-            if (clueResult) {
-                const gameState = game.getGame();
-                console.log(`✅ Clue given successfully: ${word} (${number})`);
-                
-                // 🔍 DEBUG: Check game state after clue
-                console.log('🔍 [CLUE DEBUG] Game state after giving clue:');
-                console.log('  Current clue:', gameState.currentClue);
-                console.log('  Guesses remaining:', gameState.guessesRemaining);
-                console.log('  Current turn:', gameState.currentTurn);
-                console.log('  Game status:', gameState.status);
-                
-                // Broadcast updated game state to all players in the room
-                console.log(`📡 Broadcasting game:state-updated to room: ${gameId.toUpperCase()}`);
-                io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
-                
-                // Also emit specific clue-given event
-                console.log(`💡 Broadcasting game:clue-given to room: ${gameId.toUpperCase()}`);
-                io.to(gameId.toUpperCase()).emit('game:clue-given', gameState.currentClue);
-            } else {
-                console.log(`❌ Failed to give clue`);
-                socket.emit('game:error', 'Failed to give clue');
-            }
-        } catch (error: any) {
-            console.error('❌ Error in game:give-clue handler:', error);
-            socket.emit('game:error', 'Internal error giving clue');
-        }
-    });
+          {!gameState.isSoloMode && !isMyTurn && currentPlayer && currentPlayer.team !== 'neutral' && (
+            <div className="bg-gradient-to-br from-slate-800/90 to-slate-900/90 rounded-xl p-4 text-center max-w-md backdrop-blur-lg border border-slate-600/50">
+              <p className="text-slate-300">
+                ⏳ Waiting for {gameState.currentTurn === 'red' ? '🔴' : '🔵'} team...
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
-    // Reveal card handler
-    socket.on('game:reveal-card', (data: { gameId: string; cardId: string }) => {
-        console.log('🎯 game:reveal-card received:', data);
-        
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('game:error', 'Not authenticated');
-            return;
-        }
-
-        const { gameId, cardId } = data;
-        if (!gameId || !cardId) {
-            socket.emit('game:error', 'Missing required parameters');
-            return;
-        }
-
-        try {
-            // Find game directly by gameId
-            const game = gameService.getGameByCode(gameId.toUpperCase());
-            if (!game) {
-                console.log(`❌ Game not found: ${gameId}`);
-                socket.emit('game:error', 'Game not found');
-                return;
-            }
-
-            const result = game.revealCard(user.id, cardId);
-            
-            if (result.success) {
-                const gameState = game.getGame();
-                console.log(`✅ Card revealed successfully: ${cardId}`);
-                
-                // Broadcast updated game state to all players
-                io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
-                
-                // Emit specific card-revealed event
-                if (result.card) {
-                    io.to(gameId.toUpperCase()).emit('game:card-revealed', result.card);
-                }
-                
-                // Check for game end
-                if (result.gameEnded && result.winner) {
-                    console.log(`🏆 Game ended! Winner: ${result.winner}`);
-                    io.to(gameId.toUpperCase()).emit('game:game-ended', result.winner);
-                }
-            } else {
-                console.log(`❌ Failed to reveal card`);
-                socket.emit('game:error', 'Failed to reveal card');
-            }
-        } catch (error: any) {
-            console.error('❌ Error in game:reveal-card handler:', error);
-            socket.emit('game:error', 'Internal error revealing card');
-        }
-    });
-
-    // End turn handler
-    socket.on('game:end-turn', (data: { gameId: string }) => {
-        console.log('🎯 game:end-turn received:', data);
-        
-        const user = connectedUsers.get(socket.id);
-        if (!user) {
-            socket.emit('game:error', 'Not authenticated');
-            return;
-        }
-
-        const { gameId } = data;
-        if (!gameId) {
-            socket.emit('game:error', 'Missing required parameters');
-            return;
-        }
-
-        try {
-            // Find game directly by gameId
-            const game = gameService.getGameByCode(gameId.toUpperCase());
-            if (!game) {
-                console.log(`❌ Game not found: ${gameId}`);
-                socket.emit('game:error', 'Game not found');
-                return;
-            }
-
-            // Call endTurn on the game object (no parameters needed)
-            const turnResult = game.endTurn();
-            
-            if (turnResult) {
-                const gameState = game.getGame();
-                console.log(`✅ Turn ended successfully, now ${gameState.currentTurn} team's turn`);
-                
-                // Broadcast updated game state
-                io.to(gameId.toUpperCase()).emit('game:state-updated', gameState);
-                
-                // Emit turn change event
-                io.to(gameId.toUpperCase()).emit('game:turn-changed', gameState.currentTurn);
-            } else {
-                console.log(`❌ Failed to end turn`);
-                socket.emit('game:error', 'Failed to end turn');
-            }
-        } catch (error: any) {
-            console.error('❌ Error in game:end-turn handler:', error);
-            socket.emit('game:error', 'Internal error ending turn');
-        }
-    });
-
-    // Handle disconnection
-    socket.on('disconnect', () => {
-        const user = connectedUsers.get(socket.id);
-        if (user) {
-            console.log('📡 Socket disconnected via handlers:', socket.id, user.username);
-
-            // Remove from global room
-            const globalRoom = getOrCreateGlobalRoom();
-            userRooms.delete(socket.id);
-            globalRoom.users.delete(socket.id);
-
-            // Notify others
-            socket.to('GLOBAL').emit('user-left', {
-                user: user,
-                message: `${user.username} left the chat`,
-            });
-
-            // Update room users
-            const roomUsers = Array.from(globalRoom.users.values());
-            io.to('GLOBAL').emit('room-users', { users: roomUsers });
-
-            connectedUsers.delete(socket.id);
-        } else {
-            console.log('📡 Socket disconnected via handlers:', socket.id, '(unauthenticated)');
-        }
-    });
-
-    // Handle authentication timeout
-    setTimeout(() => {
-        if (!connectedUsers.has(socket.id)) {
-            console.log('⚠️ Socket', socket.id, 'connected but not authenticated after 5 seconds');
-        }
-    }, 5000);
+      {/* Game Over Modal */}
+      {gameState.status === 'finished' && gameState.winner && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-600">
+            {gameState.isSoloMode ? (
+              // Solo mode results
+              gameState.winner === gameState.soloTeam ? (
+                <>
+                  <h2 className="text-4xl font-bold text-center mb-4 text-emerald-100">🎉 Victory! 🎉</h2>
+                  <div className="text-2xl font-bold text-center mb-6 text-emerald-400">
+                    You found all your team's words!
+                  </div>
+                </>
+              ) : gameState.winner === 'assassin' ? (
+                <>
+                  <h2 className="text-4xl font-bold text-center mb-4 text-red-100">💀 Game Over 💀</h2>
+                  <div className="text-2xl font-bold text-center mb-6 text-red-400">
+                    You hit the assassin!
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-4xl font-bold text-center mb-4 text-yellow-100">😔 Out of Clues 😔</h2>
+                  <div className="text-2xl font-bold text-center mb-6 text-yellow-400">
+                    You ran out of clues!
+                  </div>
+                </>
+              )
+            ) : (
+              // Classic mode results
+              <>
+                <h2 className="text-4xl font-bold text-center mb-4 text-amber-100">🎉 Game Over! 🎉</h2>
+                <div className={`text-3xl font-bold text-center mb-6 ${gameState.winner === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                  {gameState.winner === 'red' ? '🔴' : '🔵'} {gameState.winner.charAt(0).toUpperCase() + gameState.winner.slice(1)} Team Wins!
+                </div>
+              </>
+            )}
+            <div className="flex gap-4">
+              <button
+                onClick={() => window.location.reload()}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold"
+              >
+                🔄 New Game
+              </button>
+              <button
+                onClick={() => console.log('Reset game')}
+                className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-3 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold"
+              >
+                🎮 Play Again
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
+
+export default GameBoard;
+
+
+============================================================
+FILE: frontend/src/components/GameBoard/Card.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\components\GameBoard\Card.tsx
+SIZE: 6202 characters
+============================================================
+import React, { useState } from 'react';
+import { CodeCard, TeamColor } from '../../types/game';
+
+interface CardProps {
+  card: CodeCard;
+  isSpymaster: boolean;
+  onClick?: (cardId: string) => void;
+  disabled?: boolean;
+  className?: string;
+}
+
+const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolean) => {
+  if (isRevealed) {
+    // Revealed cards with premium board game styling
+    switch (team) {
+      case 'red':
+        return 'bg-gradient-to-br from-red-600 via-red-500 to-red-700 text-white border-red-800 shadow-2xl shadow-red-500/25';
+      case 'blue':
+        return 'bg-gradient-to-br from-blue-600 via-blue-500 to-blue-700 text-white border-blue-800 shadow-2xl shadow-blue-500/25';
+      case 'neutral':
+        return 'bg-gradient-to-br from-slate-500 via-slate-400 to-slate-600 text-white border-slate-700 shadow-2xl shadow-slate-500/25';
+      case 'assassin':
+        return 'bg-gradient-to-br from-gray-900 via-black to-gray-800 text-red-400 border-red-900 shadow-2xl shadow-red-900/50';
+      default:
+        return 'bg-gradient-to-br from-stone-300 to-stone-400 text-stone-800 border-stone-500';
+    }
+  } else if (isSpymaster) {
+    // Spymaster view with subtle team colors on premium card base
+    switch (team) {
+      case 'red':
+        return 'bg-gradient-to-br from-slate-700/80 via-red-900/40 to-slate-700/80 border-red-400/50 text-red-200 hover:from-red-800/60 hover:to-red-700/60 shadow-lg hover:shadow-red-500/30 backdrop-blur-sm';
+      case 'blue':
+        return 'bg-gradient-to-br from-slate-700/80 via-blue-900/40 to-slate-700/80 border-blue-400/50 text-blue-200 hover:from-blue-800/60 hover:to-blue-700/60 shadow-lg hover:shadow-blue-500/30 backdrop-blur-sm';
+      case 'neutral':
+        return 'bg-gradient-to-br from-slate-700/80 via-slate-600/40 to-slate-700/80 border-slate-400/50 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 shadow-lg hover:shadow-slate-500/30 backdrop-blur-sm';
+      case 'assassin':
+        return 'bg-gradient-to-br from-slate-800/80 via-red-900/60 to-slate-800/80 border-red-500 text-red-300 hover:from-red-900/80 hover:to-red-800/80 shadow-lg hover:shadow-red-600/50 font-bold backdrop-blur-sm';
+      default:
+        return 'bg-gradient-to-br from-slate-700/80 to-slate-600/80 border-slate-400 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 backdrop-blur-sm';
+    }
+  } else {
+    // Regular players see dark card base
+    return 'bg-gradient-to-br from-slate-700/80 via-slate-600/60 to-slate-700/80 border-slate-500 text-slate-100 hover:from-slate-600/80 hover:to-slate-600/80 hover:border-slate-400 shadow-lg hover:shadow-slate-500/50 backdrop-blur-sm';
+  }
+};
+
+const getTeamEmoji = (team: TeamColor) => {
+  switch (team) {
+    case 'red': return '🔴';
+    case 'blue': return '🔵';
+    case 'neutral': return '⚪';
+    case 'assassin': return '💀';
+    default: return '';
+  }
+};
+
+export const Card: React.FC<CardProps> = ({ 
+  card, 
+  isSpymaster, 
+  onClick, 
+  disabled = false,
+  className = ''
+}) => {
+  const [showSubmit, setShowSubmit] = useState(false);
+
+  const handleClick = () => {
+    if (!disabled && onClick && !card.isRevealed) {
+      setShowSubmit(true);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (onClick) {
+      onClick(card.id);
+      setShowSubmit(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setShowSubmit(false);
+  };
+
+  const colors = getCardColors(card.team, card.isRevealed, isSpymaster);
+  const clickable = !disabled && onClick && !card.isRevealed;
+
+  return (
+    <div
+      className={`
+        relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 p-2 sm:p-3 border-2 rounded-xl flex items-center justify-center
+        transition-all duration-300 font-semibold text-center cursor-pointer
+        ${colors}
+        ${clickable ? 'transform hover:scale-105 hover:shadow-xl hover:-translate-y-1 active:scale-95' : 'cursor-default'}
+        ${disabled ? 'opacity-50' : ''}
+        ${showSubmit ? 'ring-4 ring-violet-400 ring-opacity-50 scale-105 shadow-xl' : ''}
+        ${className}
+        backdrop-blur-sm
+      `}
+      onClick={handleClick}
+      role={clickable ? 'button' : 'text'}
+      tabIndex={clickable ? 0 : -1}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && clickable) {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+    >
+      {/* Word - hidden when submit buttons are shown */}
+      {!showSubmit && (
+        <span className="font-bold text-xs sm:text-sm md:text-base leading-tight break-words px-1">
+          {card.word.replace(/_/g, ' ')}
+        </span>
+      )}
+
+      {/* Enhanced Submit/Cancel buttons */}
+      {showSubmit && !card.isRevealed && (
+        <div className="flex flex-col gap-2 w-full">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSubmit();
+            }}
+            className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-2 py-1 rounded-md text-xs font-bold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-lg transform hover:scale-105 border border-emerald-500"
+          >
+            ✓ GUESS
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCancel();
+            }}
+            className="bg-gradient-to-r from-slate-600 to-slate-700 text-white px-2 py-1 rounded-md text-xs hover:from-slate-700 hover:to-slate-800 transition-all duration-200 shadow-lg border border-slate-500"
+          >
+            ✗ Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Enhanced revealed indicator */}
+      {card.isRevealed && (
+        <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90 shadow-sm" />
+      )}
+
+      {/* Enhanced spymaster team indicator */}
+      {isSpymaster && !card.isRevealed && !showSubmit && (
+        <div className="absolute bottom-1 left-1 text-sm bg-gradient-to-br from-slate-600/90 to-slate-700/90 rounded-full p-1 shadow-lg border border-slate-400/50 backdrop-blur-sm">
+          {getTeamEmoji(card.team)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Card;
+
+
+============================================================
+FILE: frontend/src/pages/GamePage.tsx
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\src\pages\GamePage.tsx
+SIZE: 11262 characters
+============================================================
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { socketService } from '../services/socketService';
+import { gameService } from '../services/gameService';
+import GameBoard from '../components/GameBoard/GameBoard';
+
+const GamePage: React.FC = () => {
+  const { gameId } = useParams<{ gameId: string }>();
+  const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [gameState, setGameState] = useState<any>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    if (!gameId) return;
+    
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    setCurrentUser(user);
+    loadGameAndConnect();
+    
+    return () => {
+      gameService.removeAllGameListeners();
+      if (socketService.socket) {
+        socketService.socket.off('game:state-updated');
+        socketService.socket.off('game:clue-given');
+        socketService.socket.off('game:card-revealed');
+        socketService.socket.off('game:turn-changed');
+        socketService.socket.off('game:game-ended');
+      }
+    };
+  }, [gameId]);
+
+  const loadGameAndConnect = async () => {
+    
+    
+    if (!gameId) {
+      
+      setError('No game ID provided');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const token = localStorage.getItem('token');
+      
+      
+      
+      if (!user.username || !token) {
+        
+        setError('Please log in first');
+        setIsLoading(false);
+        return;
+      }
+
+      // Load game state
+      
+      const gameResponse = await fetch(`/api/games/${gameId}`);
+      
+      
+      
+      if (gameResponse.ok) {
+        const gameData = await gameResponse.json();
+        
+        
+        if (gameData.success) {
+          
+          
+          
+          
+          setGameState(gameData.game);
+          
+          // Allow waiting games to proceed (they'll show team setup)
+          // Only reject if the game is in an invalid state
+          if (gameData.game.status === 'finished') {
+            console.log('🏁 Game is finished, proceeding to show results');
+          } else if (gameData.game.status === 'waiting') {
+            console.log('⏳ Game is in waiting/setup state, will show team selection');
+          } else {
+            console.log(`🎮 Game status: ${gameData.game.status}`);
+          }
+          
+          
+          // Connect to game socket
+          await connectToGame(gameId, token, user);
+          
+          setIsLoading(false);
+        } else {
+          
+          throw new Error(gameData.error || 'Failed to load game');
+        }
+      } else if (gameResponse.status === 404) {
+        
+        setError('Game not found');
+        setIsLoading(false);
+        return;
+      } else {
+        
+        throw new Error('Failed to load game');
+      }
+      
+    } catch (err: any) {
+      
+      setError(err.message || 'Unable to connect to game');
+      setIsLoading(false);
+    }
+  };
+
+  const connectToGame = async (gameId: string, token: string, user: any) => {
+    if (isConnected && socketService.socket?.connected) {
+      return Promise.resolve();
+    }
+    
+    return new Promise<void>((resolve) => {
+      if (!socketService.socket?.connected) {
+        console.log('❌ No socket connection available');
+        return;
+      }
+
+      const handleAuth = () => {
+        socketService.socket?.emit('join-game', gameId);
+        setIsConnected(true);
+        setupGameListeners();
+        resolve();
+      };
+
+      socketService.onAuthenticated((data: any) => {
+        if (data.success) handleAuth();
+      });
+      
+      socketService.authenticate(token);
+      
+      if (socketService.socket?.connected && !isConnected) {
+        handleAuth();
+      }
+    });
+  };
+
+  const setupGameListeners = () => {
+    gameService.removeAllGameListeners();
+    
+    gameService.onGameStateUpdated((newGameState: any) => {
+      console.log('🎮 Game state updated:', newGameState);
+      
+      // 🔍 DEBUG: Check clue in received game state
+      console.log('🔍 [STATE UPDATE] Current clue in new state:', newGameState.currentClue);
+      console.log('🔍 [STATE UPDATE] Guesses remaining:', newGameState.guessesRemaining);
+      console.log('🔍 [STATE UPDATE] Before setting state, old clue was:', gameState?.currentClue);
+      
+      // 🔍 DEBUG: Check solo mode status
+      console.log('🔍 [SOLO MODE DEBUG] isSoloMode:', newGameState.isSoloMode);
+      console.log('🔍 [SOLO MODE DEBUG] soloTeam:', newGameState.soloTeam);
+      console.log('🔍 [SOLO MODE DEBUG] Red team:', newGameState.redTeam ? 'exists' : 'null');
+      console.log('🔍 [SOLO MODE DEBUG] Blue team:', newGameState.blueTeam ? 'exists' : 'null');
+      
+      setGameState(newGameState);
+      
+      console.log('🔍 [STATE UPDATE] State should now be updated with clue');
+    });
+
+    gameService.onGameError((error: string) => {
+      console.error('🎮 Game error:', error);
+      setError(error);
+      setTimeout(() => setError(''), 3000);
+    });
+    
+    if (socketService.socket) {
+      socketService.socket.on('game:clue-given', (clue: any) => {
+        console.log('💡 Clue given:', clue);
+        console.log('🔍 [CLUE EVENT] Current gameState.currentClue before this event:', gameState?.currentClue);
+        console.log('🔍 [CLUE EVENT] This might be redundant if game:state-updated is working');
+      });
+      
+      socketService.socket.on('game:card-revealed', (card: any) => {
+        console.log('🎯 Card revealed:', card);
+      });
+      
+      socketService.socket.on('game:turn-changed', (newTurn: string) => {
+        console.log('⏭️ Turn changed:', newTurn);
+      });
+      
+      socketService.socket.on('game:game-ended', (winner: string) => {
+        console.log('🏆 Game ended, winner:', winner);
+      });
+    }
+  };
+
+  const getCurrentUserPlayer = () => {
+    if (!gameState || !currentUser) return null;
+    
+    // Check red team spymaster
+    if (gameState.redTeam?.spymaster && 
+        (gameState.redTeam.spymaster.username === currentUser.username || 
+         gameState.redTeam.spymaster.id === currentUser.id)) {
+      return {
+        ...gameState.redTeam.spymaster,
+        team: 'red' as const,
+        role: 'spymaster' as const
+      };
+    }
+    
+    // Check red team operatives
+    if (gameState.redTeam?.operatives) {
+      const redOperative = gameState.redTeam.operatives.find((p: any) => 
+        p.username === currentUser.username || p.id === currentUser.id
+      );
+      if (redOperative) {
+        return {
+          ...redOperative,
+          team: 'red' as const,
+          role: 'operative' as const
+        };
+      }
+    }
+    
+    // Check blue team spymaster
+    if (gameState.blueTeam?.spymaster && 
+        (gameState.blueTeam.spymaster.username === currentUser.username || 
+         gameState.blueTeam.spymaster.id === currentUser.id)) {
+      return {
+        ...gameState.blueTeam.spymaster,
+        team: 'blue' as const,
+        role: 'spymaster' as const
+      };
+    }
+    
+    // Check blue team operatives
+    if (gameState.blueTeam?.operatives) {
+      const blueOperative = gameState.blueTeam.operatives.find((p: any) => 
+        p.username === currentUser.username || p.id === currentUser.id
+      );
+      if (blueOperative) {
+        return {
+          ...blueOperative,
+          team: 'blue' as const,
+          role: 'operative' as const
+        };
+      }
+    }
+    
+    return null;
+  };
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Loading Game...</div>
+          <div className="text-gray-600 mb-6">Game: <span className="font-mono bg-gray-100 px-2 py-1 rounded">{gameId}</span></div>
+          <div className="flex justify-center">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error State
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
+          <div className="text-red-600 text-2xl font-bold mb-4">🚨 Game Error</div>
+          <div className="text-gray-600 mb-6">
+            <p>Game: <span className="font-mono bg-gray-100 px-2 py-1 rounded font-bold">{gameId}</span></p>
+            <p className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm">{error}</p>
+          </div>
+          <div className="space-y-3">
+            <button 
+              onClick={() => navigate('/')}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🏠 Go Back to Home
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg"
+            >
+              🔄 Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Game State - Render the actual game
+  if (gameState) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 relative">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+        </div>
+
+        {/* Game Content */}
+        <div className="relative z-10">
+          {/* Error Display */}
+          {error && (
+            <div className="mb-6 mx-4 p-4 bg-red-900/50 border border-red-500/50 rounded-lg">
+              <p className="text-red-200">{error}</p>
+            </div>
+          )}
+
+          {/* Game Board */}
+          <GameBoard 
+            gameState={gameState}
+            currentPlayer={getCurrentUserPlayer()}
+            isConnected={isConnected}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback - should not reach here
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center pt-16">
+      <div className="text-center">
+        <div className="text-2xl font-bold text-gray-900 mb-4">🎮 Codenames</div>
+        <p className="text-gray-600">Game not found</p>
+      </div>
+    </div>
+  );
+};
+
+export default GamePage;
+
+
+============================================================
+FILE: shared/types/game.ts
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\shared\types\game.ts
+SIZE: 9732 characters
+============================================================
+// Shared Game Types for Codenames - Phase 2
+// Integrates with existing shared/types/index.ts
+
+export type TeamColor = 'red' | 'blue' | 'neutral' | 'assassin';
+export type PlayerRole = 'spymaster' | 'operative';
+export type GameStatus = 'waiting' | 'setup' | 'playing' | 'finished';
+
+export interface CodeCard {
+  id: string;
+  word: string;
+  team: TeamColor;
+  isRevealed: boolean;
+  revealedBy?: string; // player id who revealed it
+  position: number; // 0-24 for 5x5 grid
+}
+
+export interface GamePlayer {
+  id: string;
+  username: string;
+  isOnline: boolean;
+  socketId: string;
+  // Note: team and role removed - now determined by team structure position
+}
+
+export interface GameClue {
+  word: string;
+  number: number;
+  givenBy: string; // player id
+  timestamp: string;
+}
+
+// New Team structure
+export interface Team {
+  spymaster: GamePlayer;
+  operatives: GamePlayer[];
+}
+
+export interface CodenamesGame {
+  id: string;
+  gameCode: string;
+  status: GameStatus;
+  currentTurn: TeamColor;
+  redTeam?: Team;   // undefined if empty
+  blueTeam?: Team;  // undefined if empty
+  board: CodeCard[];
+  currentClue?: GameClue;
+  guessesRemaining: number;
+  isSoloMode?: boolean;
+  soloCluesRemaining?: number; // Number of clues remaining (starts at 5)
+  soloTurnGuessesRemaining?: number; // Guesses left in current turn
+  soloTeam?: TeamColor; // which team is playing in solo mode
+  winner?: TeamColor;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameConfig {
+  boardSize: number; // Always 25 for 5x5
+  redCards: number;   // 9 or 8
+  blueCards: number;  // 8 or 9  
+  neutralCards: number; // 7
+  assassinCards: number; // 1
+}
+
+// Game Lobby Types (team assignment phase) - Updated for new structure
+export interface GameLobbyMessage {
+  id: string;
+  username: string;
+  userId: string;
+  text: string;
+  timestamp: string;
+}
+
+export interface GameLobbyPlayer {
+  id: string;
+  username: string;
+  team: TeamColor;
+  role: PlayerRole;
+  isOnline: boolean;
+  isOwner: boolean;
+}
+
+export interface GameLobby {
+  id: string;
+  code: string;
+  owner: string;
+  players: GameLobbyPlayer[];
+  status: 'waiting' | 'playing' | 'finished';
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Socket Events for Game (extends existing socket events)
+export interface GameSocketEvents {
+  // Game Management
+  'game:create': () => void;
+  'game:join': (gameId: string) => void;
+  'game:start': () => void;
+  'game:reset': () => void;
+  
+  // Team/Role Assignment
+  'game:join-team': (team: TeamColor, role: PlayerRole) => void;
+  
+  // Game Actions
+  'game:give-clue': (clue: { word: string; number: number }) => void;
+  'game:reveal-card': (cardId: string) => void;
+  'game:end-turn': () => void;
+  
+  // Game State Updates (server to client)
+  'game:state-updated': (game: CodenamesGame) => void;
+  'game:player-joined': (player: GamePlayer) => void;
+  'game:card-revealed': (card: CodeCard) => void;
+  'game:clue-given': (clue: GameClue) => void;
+  'game:turn-changed': (newTurn: TeamColor) => void;
+  'game:game-ended': (winner: TeamColor) => void;
+  'game:error': (error: string) => void;
+}
+
+// Game Constants
+export const GAME_CONFIG = {
+  BOARD_SIZE: 25,
+  MIN_PLAYERS: 1,
+  MAX_PLAYERS: 8,
+  STANDARD_SETUP: {
+    boardSize: 25,
+    redCards: 9,
+    blueCards: 8,
+    neutralCards: 7,
+    assassinCards: 1
+  } as GameConfig
+};
+
+// Helper functions for new team structure
+export const getPlayerTeam = (game: CodenamesGame, playerId: string): TeamColor => {
+  if (game.redTeam?.spymaster.id === playerId) return 'red';
+  if (game.redTeam?.operatives.some(p => p.id === playerId)) return 'red';
+  if (game.blueTeam?.spymaster.id === playerId) return 'blue';
+  if (game.blueTeam?.operatives.some(p => p.id === playerId)) return 'blue';
+  return 'neutral';
+};
+
+export const getPlayerRole = (game: CodenamesGame, playerId: string): PlayerRole => {
+  if (game.redTeam?.spymaster.id === playerId || game.blueTeam?.spymaster.id === playerId) {
+    return 'spymaster';
+  }
+  return 'operative';
+};
+
+export const getAllPlayers = (game: CodenamesGame): GamePlayer[] => {
+  const players: GamePlayer[] = [];
+  if (game.redTeam) {
+    players.push(game.redTeam.spymaster, ...game.redTeam.operatives);
+  }
+  if (game.blueTeam) {
+    players.push(game.blueTeam.spymaster, ...game.blueTeam.operatives);
+  }
+  return players;
+};
+
+export const isTeamValid = (team?: Team): boolean => {
+  console.log(`team: {team}, spymaster: ${team?.spymaster}, operatives: ${team?.operatives.length}`);
+  return !!team && !!team.spymaster && team.operatives.length > 0;
+};
+
+export const canStartGame = (game: CodenamesGame): boolean => {
+  const redValid = isTeamValid(game.redTeam);
+  const blueValid = isTeamValid(game.blueTeam);
+  
+  console.log('🔍 [CANSTART] Red valid:', redValid, 'Blue valid:', blueValid);
+  
+  // Allow game to start with at least one valid team
+  const canStart = redValid || blueValid;
+  console.log('🔍 [CANSTART] Final result:', canStart);
+  
+  return canStart;
+};
+
+
+// Solo mode helpers
+// Solo Mode Rules:
+// - Team gets 5 clues total
+// - Spymaster gives clue (word + number) → -1 clue
+// - Operatives can guess (clue number + 1) words per turn  
+// - Penalties: Neutral=end turn, Enemy=end turn + lose 1 clue, Assassin=game over
+// - Win: Find all team cards, Lose: Run out of clues
+export const isSoloMode = (game: CodenamesGame): boolean => {
+  const redValid = isTeamValid(game.redTeam);
+  const blueValid = isTeamValid(game.blueTeam);
+  return (redValid && !blueValid) || (!redValid && blueValid);
+};
+
+export const getSoloTeam = (game: CodenamesGame): TeamColor => {
+  if (isTeamValid(game.redTeam)) return 'red';
+  if (isTeamValid(game.blueTeam)) return 'blue';
+  return 'neutral';
+};
+
+export const getSoloTeamCards = (game: CodenamesGame): CodeCard[] => {
+  const soloTeam = getSoloTeam(game);
+  return game.board.filter(card => card.team === soloTeam);
+};
+
+// Word list for game generation
+export const CODENAMES_WORDS = [
+  'AFRICA', 'AGENT', 'AIR', 'ALIEN', 'ALPS', 'AMAZON', 'AMBULANCE', 'AMERICA', 'ANGEL', 'ANTARCTICA',
+  'APPLE', 'ARM', 'ATLANTIS', 'AUSTRALIA', 'AZTEC', 'BACK', 'BALL', 'BAND', 'BANK', 'BAR',
+  'BARK', 'BAT', 'BATTERY', 'BEACH', 'BEAR', 'BEAT', 'BED', 'BEIJING', 'BELL', 'BELT',
+  'BERLIN', 'BERMUDA', 'BERRY', 'BILL', 'BLOCK', 'BOARD', 'BOLT', 'BOMB', 'BOND', 'BOOM',
+  'BOOT', 'BOTTLE', 'BOW', 'BOX', 'BRIDGE', 'BRUSH', 'BUCK', 'BUFFALO', 'BUG', 'BUGLE',
+  'BUTTON', 'CALF', 'CANADA', 'CAP', 'CAPITAL', 'CAR', 'CARD', 'CARROT', 'CASINO', 'CAST',
+  'CAT', 'CELL', 'CENTAUR', 'CENTER', 'CHAIR', 'CHANGE', 'CHARGE', 'CHECK', 'CHEST', 'CHICK',
+  'CHINA', 'CHOCOLATE', 'CHURCH', 'CIRCLE', 'CLIFF', 'CLOAK', 'CLUB', 'CODE', 'COLD', 'COMIC',
+  'COMPOUND', 'COMPUTER', 'CONDUCTOR', 'CONTRACT', 'COOK', 'COPPER', 'COTTON', 'COURT', 'COVER', 'CRANE',
+  'CRASH', 'CRICKET', 'CROSS', 'CROWN', 'CYCLE', 'CZECH', 'DANCE', 'DATE', 'DAY', 'DEATH',
+  'DECK', 'DEGREE', 'DIAMOND', 'DICE', 'DINOSAUR', 'DISEASE', 'DOCTOR', 'DOG', 'DRAFT', 'DRAGON',
+  'DRESS', 'DRILL', 'DROP', 'DUCK', 'DWARF', 'EAGLE', 'EGYPT', 'ENGINE', 'ENGLAND', 'EUROPE',
+  'EYE', 'FACE', 'FAIR', 'FALL', 'FAN', 'FENCE', 'FIELD', 'FIGHTER', 'FIGURE', 'FILE',
+  'FILM', 'FIRE', 'FISH', 'FLUTE', 'FLY', 'FOOT', 'FORCE', 'FOREST', 'FORK', 'FRANCE',
+  'GAME', 'GAS', 'GENIUS', 'GERMANY', 'GHOST', 'GIANT', 'GLASS', 'GLOVE', 'GOLD', 'GRACE',
+  'GRASS', 'GREECE', 'GREEN', 'GROUND', 'HAM', 'HAND', 'HAWK', 'HEAD', 'HEART', 'HELICOPTER',
+  'HIMALAYAS', 'HOLE', 'HOLLYWOOD', 'HONEY', 'HOOD', 'HOOK', 'HORN', 'HORSE', 'HORSESHOE', 'HOSPITAL',
+  'HOTEL', 'ICE', 'ICE_CREAM', 'INDIA', 'IRON', 'IVORY', 'JACK', 'JAM', 'JET', 'JUPITER',
+  'KANGAROO', 'KETCHUP', 'KEY', 'KID', 'KING', 'KIWI', 'KNIFE', 'KNIGHT', 'LAB', 'LAP',
+  'LASER', 'LAWYER', 'LEAD', 'LEMON', 'LEPRECHAUN', 'LIFE', 'LIGHT', 'LIMOUSINE', 'LINE', 'LINK',
+  'LION', 'LITTER', 'LOCH_NESS', 'LOCK', 'LOG', 'LONDON', 'LUCK', 'MAIL', 'MAMMOTH', 'MAPLE',
+  'MARBLE', 'MARCH', 'MASS', 'MATCH', 'MERCURY', 'MEXICO', 'MICROSCOPE', 'MILLIONAIRE', 'MINE', 'MINT',
+  'MISSILE', 'MODEL', 'MOLE', 'MOON', 'MOSCOW', 'MOUNT', 'MOUSE', 'MOUTH', 'MUG', 'NAIL',
+  'NEEDLE', 'NET', 'NEW_YORK', 'NIGHT', 'NINJA', 'NOTE', 'NOVEL', 'NURSE', 'NUT', 'OCTOPUS',
+  'OIL', 'OLIVE', 'OLYMPUS', 'OPERA', 'ORANGE', 'ORGAN', 'PALM', 'PAN', 'PANTS', 'PAPER',
+  'PARACHUTE', 'PARK', 'PART', 'PASS', 'PASTE', 'PENGUIN', 'PHOENIX', 'PIANO', 'PIE', 'PILOT',
+  'PIN', 'PIPE', 'PIRATE', 'PISTOL', 'PIT', 'PITCH', 'PIZZA', 'PLANE', 'PLASTIC', 'PLATE',
+  'PLATYPUS', 'PLAY', 'PLOT', 'POINT', 'POISON', 'POLE', 'POLICE', 'POOL', 'PORT', 'POST',
+  'POUND', 'PRESS', 'PRINCESS', 'PUMPKIN', 'PUPIL', 'PYRAMID', 'QUEEN', 'RABBIT', 'RACKET', 'RAY',
+  'REVOLUTION', 'RING', 'ROBIN', 'ROBOT', 'ROCK', 'ROME', 'ROOT', 'ROSE', 'ROULETTE', 'ROUND',
+  'ROW', 'RULER', 'SATELLITE', 'SATURN', 'SCALE', 'SCHOOL', 'SCIENTIST', 'SCORPION', 'SCREEN', 'SCUBA_DIVER',
+  'SEAL', 'SERVER', 'SHADOW', 'SHAKESPEARE', 'SHARK', 'SHIP', 'SHOE', 'SHOP', 'SHOT', 'SINK',
+  'SKYSCRAPER', 'SLIP', 'SLUG', 'SMUGGLER', 'SNOW', 'SNOWMAN', 'SOCK', 'SOLDIER', 'SOUL', 'SOUND',
+  'SPACE', 'SPELL', 'SPIDER', 'SPIKE', 'SPINE', 'SPOT', 'SPRING', 'SPY', 'SQUARE', 'STADIUM',
+  'STAFF', 'STAR', 'STATE', 'STICK', 'STOCK', 'STRAW', 'STREAM', 'STRIKE', 'STRING', 'SUB',
+  'SUIT', 'SUPERHERO', 'SWING', 'SWITCH', 'TABLE', 'TABLET', 'TAG', 'TANK', 'TAP', 'TEACHER',
+  'TELESCOPE', 'TEMPLE', 'THEATER', 'THIEF', 'THUMB', 'TICK', 'TIE', 'TIME', 'TOKYO', 'TOOTH',
+  'TORCH', 'TOWER', 'TRACK', 'TRAIN', 'TRIANGLE', 'TRIP', 'TRUCK', 'TRUNK', 'TUBE', 'TURKEY',
+  'UNDERTAKER', 'UNICORN', 'VACUUM', 'VAN', 'VET', 'WAKE', 'WALL', 'WAR', 'WASHER', 'WASHINGTON',
+  'WATCH', 'WATER', 'WAVE', 'WEB', 'WELL', 'WHALE', 'WHIP', 'WIND', 'WITCH', 'WIZARD',
+  'WORM', 'YARD'
+];
+
+
+============================================================
+FILE: frontend/tailwind.config.js
+PATH: C:\Users\Jmccl\Coding Projects\CodeNames\frontend\tailwind.config.js
+SIZE: 345 characters
+============================================================
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        'game-red': '#DC2626',
+        'game-blue': '#2563EB', 
+        'game-neutral': '#6B7280',
+        'game-assassin': '#1F2937'
+      }
+    },
+  },
+  plugins: [],
+}
 
 
 ================================================================================

@@ -16,10 +16,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 }) => {
   const [clueWord, setClueWord] = useState('');
   const [clueNumber, setClueNumber] = useState(1);
-  const [chatVisible, setChatVisible] = useState(false);
-  const [playersVisible, setPlayersVisible] = useState(false);
-  const [infoVisible, setInfoVisible] = useState(false);
-  const [settingsVisible, setSettingsVisible] = useState(false);
 
   // Reset clue input when turn changes or clue is given
   useEffect(() => {
@@ -228,77 +224,84 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       <div className="min-h-screen flex justify-center p-4">
         <div className="flex flex-col items-center space-y-4 max-w-4xl w-full">
           
-          {/* Icons positioned above the game board */}
-          <div className="flex mb-2">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setChatVisible(!chatVisible)}
-                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
-                  chatVisible 
-                    ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 text-white border-emerald-400/50' 
-                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
-                }`}
-                title="Chat"
-              >
-                💬
-              </button>
-              <button
-                onClick={() => setPlayersVisible(!playersVisible)}
-                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
-                  playersVisible 
-                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white border-blue-400/50' 
-                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
-                }`}
-                title="Players"
-              >
-                👥
-              </button>
-              <button
-                onClick={() => setInfoVisible(!infoVisible)}
-                className={`w-10 h-10 rounded-lg shadow-lg border transition-all duration-200 flex items-center justify-center text-sm backdrop-blur-sm ${
-                  infoVisible 
-                    ? 'bg-gradient-to-br from-amber-600 to-amber-700 text-white border-amber-400/50' 
-                    : 'bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-slate-200 border-slate-500/50 hover:from-slate-600/80 hover:to-slate-700/80'
-                }`}
-                title="Info"
-              >
-                ℹ️
-              </button>
-              <button
-                onClick={() => setSettingsVisible(!settingsVisible)}
-                className="w-10 h-10 bg-gradient-to-br from-slate-700/80 to-slate-800/80 rounded-lg shadow-lg border border-slate-600/50 flex items-center justify-center hover:from-slate-600/80 hover:to-slate-700/80 transition-all duration-200 backdrop-blur-sm relative"
-                title="Settings"
-              >
-                <span className="text-slate-200 text-sm">⚙️</span>
-                
-                {/* Settings Dropdown */}
-                {settingsVisible && (
-                  <div className="absolute top-12 right-0 bg-gradient-to-br from-slate-800/95 to-slate-900/95 rounded-lg shadow-2xl border border-slate-600/50 p-3 min-w-32 backdrop-blur-lg z-60">
-                    <button
-                      onClick={() => window.location.href = '/'}
-                      className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-left"
-                    >
-                      🏠 Logout
-                    </button>
+          {/* General Info Display */}
+          <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
+            {gameState.currentClue ? (
+              // Clue has been given
+              <div className="text-center">
+                <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                  {(() => {
+                    // Find who gave the clue
+                    const currentTurnSpymaster = gameState.currentTurn === 'red' 
+                      ? gameState.redTeam?.spymaster 
+                      : gameState.blueTeam?.spymaster;
+                    const spymasterName = currentTurnSpymaster?.username || 'Spymaster';
+                    
+                    return `${spymasterName} has given the a clue! ${gameState.currentClue.word} (${gameState.currentClue.number})`;
+                  })()}
+                </span>
+                {gameState.guessesRemaining > 0 && (
+                  <div className="mt-2 text-sm text-violet-300">
+                    {gameState.guessesRemaining} guess{gameState.guessesRemaining !== 1 ? 'es' : ''} remaining
                   </div>
                 )}
-              </button>
-            </div>
+              </div>
+            ) : (
+              // No clue given yet
+              <div className="text-center">
+                {(() => {
+                  // Check if current player is the active spymaster
+                  const currentTurnSpymaster = gameState.currentTurn === 'red' 
+                    ? gameState.redTeam?.spymaster 
+                    : gameState.blueTeam?.spymaster;
+                  
+                  const isActiveSpymaster = currentPlayer && currentTurnSpymaster && 
+                    (currentPlayer.id === currentTurnSpymaster.id || currentPlayer.username === currentTurnSpymaster.username);
+                  
+                  if (gameState.isSoloMode) {
+                    // Solo mode - find the spymaster on the active team
+                    const soloTeamSpymaster = gameState.soloTeam === 'red' 
+                      ? gameState.redTeam?.spymaster 
+                      : gameState.blueTeam?.spymaster;
+                    
+                    const isActiveSpymasterSolo = currentPlayer && soloTeamSpymaster && 
+                      (currentPlayer.id === soloTeamSpymaster.id || currentPlayer.username === soloTeamSpymaster.username);
+                    
+                    if (isActiveSpymasterSolo) {
+                      return (
+                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                          💡 It's your turn to give a clue!
+                        </span>
+                      );
+                    } else {
+                      const spymasterName = soloTeamSpymaster?.username || 'Spymaster';
+                      return (
+                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                          ⏳ Waiting for Spymaster {spymasterName} to give a clue
+                        </span>
+                      );
+                    }
+                  } else {
+                    // Classic multiplayer mode
+                    if (isActiveSpymaster) {
+                      return (
+                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                          💡 It's your turn to give a clue!
+                        </span>
+                      );
+                    } else {
+                      const spymasterName = currentTurnSpymaster?.username || 'Spymaster';
+                      return (
+                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+                          ⏳ Waiting for Spymaster {spymasterName} to give a clue
+                        </span>
+                      );
+                    }
+                  }
+                })()}
+              </div>
+            )}
           </div>
-          
-          {/* Current Clue Display */}
-          {gameState.currentClue && (
-            <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
-              <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                💡 {gameState.currentClue.word} ({gameState.currentClue.number})
-              </span>
-              {gameState.guessesRemaining > 0 && (
-                <span className="ml-3 text-sm text-violet-300">
-                  {gameState.guessesRemaining} left
-                </span>
-              )}
-            </div>
-          )}
 
           {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
           <div className={`relative bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
@@ -331,6 +334,65 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                   )}
               </div>
             </div>
+          </div>
+
+          {/* Team Scores and Game Status */}
+          <div className="flex items-center justify-center space-x-4 mb-4">
+            {/* Red Team Score */}
+            <div className="bg-gradient-to-br from-red-600/80 to-red-700/80 border border-red-400/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
+              <div className="text-xl font-bold text-white text-center">
+                {gameState.board ? gameState.board.filter(card => card.team === 'red' && !card.isRevealed).length : 0}
+              </div>
+              <div className="text-xs text-red-100 text-center whitespace-nowrap">
+                Red Words Remaining
+              </div>
+            </div>
+
+            {/* Blue Team Score */}
+            <div className="bg-gradient-to-br from-blue-600/80 to-blue-700/80 border border-blue-400/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
+              <div className="text-xl font-bold text-white text-center">
+                {gameState.board ? gameState.board.filter(card => card.team === 'blue' && !card.isRevealed).length : 0}
+              </div>
+              <div className="text-xs text-blue-100 text-center whitespace-nowrap">
+                Blue Words Remaining
+              </div>
+            </div>
+
+            {/* Current Turn Guesses (Classic Mode) */}
+            {!gameState.isSoloMode && gameState.currentClue && gameState.guessesRemaining > 0 && (
+              <div className="bg-gradient-to-br from-slate-600/80 to-slate-700/80 border border-slate-400/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
+                <div className="text-xl font-bold text-white text-center">
+                  {gameState.guessesRemaining}
+                </div>
+                <div className="text-xs text-slate-200 text-center whitespace-nowrap">
+                  Guesses Left
+                </div>
+              </div>
+            )}
+
+            {/* Solo Mode: Clues Remaining */}
+            {gameState.isSoloMode && (
+              <div className="bg-gradient-to-br from-slate-600/80 to-slate-700/80 border border-slate-400/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
+                <div className="text-xl font-bold text-white text-center">
+                  {gameState.soloCluesRemaining || 0}
+                </div>
+                <div className="text-xs text-slate-200 text-center whitespace-nowrap">
+                  Clues Remaining
+                </div>
+              </div>
+            )}
+
+            {/* Solo Mode: Turn Guesses */}
+            {gameState.isSoloMode && gameState.currentClue && gameState.soloTurnGuessesRemaining && gameState.soloTurnGuessesRemaining > 0 && (
+              <div className="bg-gradient-to-br from-slate-600/80 to-slate-700/80 border border-slate-400/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
+                <div className="text-xl font-bold text-white text-center">
+                  {gameState.soloTurnGuessesRemaining}
+                </div>
+                <div className="text-xs text-slate-200 text-center whitespace-nowrap">
+                  Guesses Remaining
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Controls Below Board */}
