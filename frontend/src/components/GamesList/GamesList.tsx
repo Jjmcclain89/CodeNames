@@ -331,16 +331,16 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
           {/* Join with Code */}
           <div className="border-t border-slate-600/30 pt-6 lg:border-t-0 lg:pt-0">
             <div className="p-3 sm:p-4 lg:p-6 hover:bg-slate-700/10 transition-all duration-200 rounded-lg sm:rounded-xl">
-              <h4 className="text-base sm:text-lg font-semibold text-slate-100 mb-3 sm:mb-4 flex items-center">
+              <h4 className="text-base sm:text-lg font-semibold text-slate-100 mb-3 flex items-center">
                 <span className="text-xl mr-2">🚪</span>
-                Join with Code
+                Join Game with Code:
               </h4>
-              <div className="space-y-3">
+              <div className="flex items-center gap-3">
                 <input
                   type="text"
                   value={lobbyCode}
                   onChange={handleLobbyCodeChange}
-                  className="w-full px-3 py-2 bg-slate-700/60 border border-slate-500/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 backdrop-blur-sm uppercase text-center font-mono placeholder-slate-400"
+                  className="flex-1 px-3 py-2 bg-slate-700/60 border border-slate-500/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 backdrop-blur-sm uppercase text-center font-mono placeholder-slate-400"
                   placeholder="ABCD12"
                   maxLength={6}
                   disabled={isJoining}
@@ -348,7 +348,7 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
                 <button 
                   onClick={handleJoinGameLobby}
                   disabled={isJoining || !lobbyCode.trim()}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-blue-500/25"
+                  className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-600 disabled:to-slate-700 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-blue-500/25"
                 >
                   {isJoining ? (
                     <span className="flex items-center justify-center">
@@ -383,7 +383,7 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
             {gameLobbies.length > 0 ? (
               <div className="grid gap-4">
                 {gameLobbies.map((lobby) => (
-                  <div key={lobby.code} className="border-2 border-slate-600 rounded-lg bg-slate-800/50 p-3 sm:p-4">
+                  <div key={lobby.code} className="border-2 border-slate-300/60 rounded-lg bg-gradient-to-br from-slate-200/20 via-slate-300/15 to-slate-400/20 p-3 sm:p-4 shadow-lg shadow-slate-500/30 backdrop-blur-sm hover:shadow-xl hover:shadow-slate-400/40 transition-all duration-300 hover:border-slate-200/80">
                     {/* Title Section */}
                     <div className="flex items-center justify-between mb-3">
                       {/* Left: User's Game */}
@@ -402,13 +402,13 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
                       <span className="font-medium">Players:</span> {lobby.players.length > 0 ? lobby.players.join(', ') : 'None'}
                     </div>
                     
-                    <hr className="border-slate-600 mb-4" />
+                    <hr className="border-slate-300/40 mb-4" />
                     
                     {/* Join Game Button */}
-                    <div className="border-2 border-slate-600 rounded">
+                    <div className="border border-slate-300/40 rounded bg-slate-100/5">
                       <button
                         onClick={() => handleJoinGameFromList(lobby.code)}
-                        className="w-full py-2 px-4 text-slate-300 hover:bg-slate-700/50 transition-all duration-200 font-medium"
+                        className="w-full py-1.5 px-4 text-white font-semibold hover:bg-blue-500/20 hover:text-white transition-all duration-200 bg-blue-500/10 border border-blue-400/40 hover:border-blue-500/60"
                       >
                         Join Game
                       </button>
