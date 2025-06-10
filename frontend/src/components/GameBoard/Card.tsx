@@ -4,9 +4,11 @@ import { CodeCard, TeamColor } from '../../types/game';
 interface CardProps {
   card: CodeCard;
   isSpymaster: boolean;
-  onClick?: (cardId: string) => void;
+  onSelect?: (cardId: string) => void;
+  onSubmit?: (cardId: string) => void;
   disabled?: boolean;
   className?: string;
+  showSubmit?: boolean;
 }
 
 const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolean) => {
@@ -34,7 +36,7 @@ const getCardColors = (team: TeamColor, isRevealed: boolean, isSpymaster: boolea
       case 'neutral':
         return 'bg-gradient-to-br from-slate-700/80 via-slate-600/40 to-slate-700/80 border-slate-400/50 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 shadow-lg hover:shadow-slate-500/30 backdrop-blur-sm';
       case 'assassin':
-        return 'bg-gradient-to-br from-slate-800/80 via-black-900/60 to-slate-800/80 border-red-500 text-red-300 hover:from-red-900/80 hover:to-red-800/80 shadow-lg hover:shadow-red-600/50 font-bold backdrop-blur-sm';
+        return 'bg-gradient-to-br from-black via-gray-900 to-black border-black text-white hover:from-gray-800 hover:to-gray-900 shadow-lg hover:shadow-gray-600/50 font-bold backdrop-blur-sm';
       default:
         return 'bg-gradient-to-br from-slate-700/80 to-slate-600/80 border-slate-400 text-slate-200 hover:from-slate-600/80 hover:to-slate-500/80 backdrop-blur-sm';
     }
@@ -57,36 +59,29 @@ const getTeamEmoji = (team: TeamColor) => {
 export const Card: React.FC<CardProps> = ({ 
   card, 
   isSpymaster, 
-  onClick, 
+  onSelect, 
+  onSubmit, 
   disabled = false,
-  className = ''
+  className = '',
+  showSubmit = false
 }) => {
-  const [showSubmit, setShowSubmit] = useState(false);
+  
 
   const handleClick = () => {
-    if (!disabled && onClick && !card.isRevealed) {
-      setShowSubmit(true);
+    if (!disabled && onSelect && !card.isRevealed) {
+      onSelect(card.id);
     }
   };
 
-  const handleSubmit = () => {
-    if (onClick) {
-      onClick(card.id);
-      setShowSubmit(false);
-    }
-  };
 
-  const handleCancel = () => {
-    setShowSubmit(false);
-  };
 
   const colors = getCardColors(card.team, card.isRevealed, isSpymaster);
-  const clickable = !disabled && onClick && !card.isRevealed;
+  const clickable = !disabled && onSelect && !card.isRevealed;
 
   return (
     <div
       className={`
-        relative w-full h-[18vw] sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 p-2 sm:p-3 border-2 rounded-xl flex items-center justify-center
+        relative w-full h-[18vw] lg:w-32 lg:h-32 p-2 sm:p-3 border-2 rounded-xl flex items-center justify-center
         transition-all duration-300 font-semibold text-center cursor-pointer
         ${colors}
         ${clickable ? 'transform hover:scale-105 hover:shadow-xl hover:-translate-y-1 active:scale-95' : 'cursor-default'}
@@ -112,26 +107,19 @@ export const Card: React.FC<CardProps> = ({
         </span>
       )}
 
-      {/* Enhanced Submit/Cancel buttons */}
+      {/* Submit button */}
       {showSubmit && !card.isRevealed && (
-        <div className="flex flex-col gap-2 w-full">
+        <div className="flex justify-center w-full">
           <button
             onClick={(e) => {
               e.stopPropagation();
-              handleSubmit();
+              if (onSubmit) {
+                onSubmit(card.id);
+              }
             }}
-            className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-2 py-1 rounded-md text-xs font-bold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-lg transform hover:scale-105 border border-emerald-500"
+            className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-3 py-2 rounded-md text-sm font-bold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-lg transform hover:scale-105 border border-emerald-500"
           >
-            ✓ GUESS
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCancel();
-            }}
-            className="bg-gradient-to-r from-slate-600 to-slate-700 text-white px-2 py-1 rounded-md text-xs hover:from-slate-700 hover:to-slate-800 transition-all duration-200 shadow-lg border border-slate-500"
-          >
-            ✗ Cancel
+            Submit {card.word.replace(/_/g, ' ')}
           </button>
         </div>
       )}
@@ -139,6 +127,24 @@ export const Card: React.FC<CardProps> = ({
       {/* Enhanced revealed indicator */}
       {card.isRevealed && (
         <div className="absolute top-1 right-1 w-2 h-2 bg-white rounded-full opacity-90 shadow-sm" />
+      )}
+
+      {/* Colored indicators for spymaster view */}
+      {isSpymaster && !card.isRevealed && !showSubmit && (card.team === 'red' || card.team === 'blue') && (
+        <div className={`absolute top-1 right-1 w-3 h-3 rounded-full shadow-md border border-white/50 ${
+          card.team === 'red' ? 'bg-red-500' :
+          card.team === 'blue' ? 'bg-blue-500' : ''
+        }`} />
+      )}
+
+      {/* Assassin indicators in all corners for spymaster */}
+      {isSpymaster && !card.isRevealed && !showSubmit && card.team === 'assassin' && (
+        <>
+          <div className="absolute top-1 left-1 text-sm">💀</div>
+          <div className="absolute top-1 right-1 text-sm">💀</div>
+          <div className="absolute bottom-1 left-1 text-sm">💀</div>
+          <div className="absolute bottom-1 right-1 text-sm">💀</div>
+        </>
       )}
 
     </div>

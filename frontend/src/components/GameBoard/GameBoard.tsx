@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CodenamesGame, GamePlayer, TeamColor, PlayerRole, isSoloMode, getSoloTeam } from '../../types/game';
 import Card from './Card';
 import { gameService } from '../../services/gameService';
+import { socketService } from '../../services/socketService';
 
 interface GameBoardProps {
   gameState: CodenamesGame;
@@ -14,8 +16,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   currentPlayer,
   isConnected
 }) => {
+  const navigate = useNavigate();
   const [clueWord, setClueWord] = useState('');
   const [clueNumber, setClueNumber] = useState(1);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [showGameOverModal, setShowGameOverModal] = useState(true);
+  const [actionDialog, setActionDialog] = useState<{
+    show: boolean;
+    message: string;
+    fadeOut: boolean;
+  }>({ show: false, message: '', fadeOut: false });
 
   // Reset clue input when turn changes or clue is given
   useEffect(() => {
@@ -25,6 +35,58 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     }
   }, [gameState.currentClue]);
 
+  // Socket listeners for tracking actions
+  useEffect(() => {
+    if (!socketService.socket) return;
+    
+    const handleClueGiven = (clue: any) => {
+      console.log('💡 Clue given:', clue);
+      
+      // Find the actual spymaster username from current game state
+      const currentTurnSpymaster = gameState.currentTurn === 'red' 
+        ? gameState.redTeam?.spymaster 
+        : gameState.blueTeam?.spymaster;
+      const spymasterName = currentTurnSpymaster?.username || 'Spymaster';
+      
+      // Show dialog notification
+      showActionDialog(`${spymasterName} has given the clue ${clue.word} (${clue.number})`);
+    };
+    
+    const handleCardRevealed = (data: any) => {
+      console.log('🎯 Card revealed:', data);
+      
+      // Try to find the username from the current player or socket data
+      let username = 'Player';
+      if (data.username && !data.username.includes('user_')) {
+        username = data.username;
+      } else if (currentPlayer?.username) {
+        username = currentPlayer.username;
+      } else if (data.revealedBy && !data.revealedBy.includes('user_')) {
+        username = data.revealedBy;
+      }
+      
+      // Determine word team color
+      const wordTeam = data.team || data.card?.team;
+      const teamColor = wordTeam === 'red' ? 'red' : 
+                       wordTeam === 'blue' ? 'blue' : 
+                       wordTeam === 'assassin' ? 'the assassin' : 'neutral';
+      const word = data.word || data.card?.word;
+      
+      // Show dialog notification
+      showActionDialog(`${username} has guessed ${word}. It was a ${teamColor} word.`);
+    };
+    
+    socketService.socket.on('game:clue-given', handleClueGiven);
+    socketService.socket.on('game:card-revealed', handleCardRevealed);
+    
+    return () => {
+      if (socketService.socket) {
+        socketService.socket.off('game:clue-given', handleClueGiven);
+        socketService.socket.off('game:card-revealed', handleCardRevealed);
+      }
+    };
+  }, []);
+
   const stats = gameService.getTeamStats(gameState);
   const isSpymaster = currentPlayer?.role === 'spymaster';
   const isMyTurn = gameService.isPlayerTurn(gameState, currentPlayer);
@@ -32,9 +94,14 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   const canRevealCard = gameService.canPlayerRevealCard(gameState, currentPlayer);
 
   // Game action handlers
-  const handleCardClick = (cardId: string) => {
+  const handleCardSelect = (cardId: string) => {
+    setSelectedCardId(cardId);
+  };
+
+  const handleCardSubmit = (cardId: string) => {
     console.log('🎯 Revealing card:', cardId);
     gameService.revealCard(gameState.gameCode, cardId);
+    setSelectedCardId(null);
   };
 
   const handleGiveClue = () => {
@@ -67,14 +134,93 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     return gameState.players.some(p => p.team === team && p.role === 'spymaster');
   };
 
-  // Get board glow effect based on current turn and mode
+  // Get board glow effect based on current turn
   const getBoardGlowEffect = () => {
-      // Classic mode - use current turn
-      if (gameState.currentTurn === 'red') {
-        return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+    if (gameState.currentTurn === 'red') {
+      return 'shadow-2xl shadow-red-400 ring-4 ring-red-400/80 shadow-red-500/70 drop-shadow-2xl';
+    } else {
+      return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+    }
+  };
+
+
+  // Show action dialog with auto-fade
+  const showActionDialog = (message: string) => {
+    setActionDialog({ show: true, message, fadeOut: false });
+    
+    // Start fade out after 2 seconds
+    setTimeout(() => {
+      setActionDialog(prev => ({ ...prev, fadeOut: true }));
+    }, 2000);
+    
+    // Hide completely after fade animation
+    setTimeout(() => {
+      setActionDialog({ show: false, message: '', fadeOut: false });
+    }, 2500);
+  };
+
+  // Get current game state message for info bar
+  const getInfoMessage = () => {
+    const currentTurnSpymaster = gameState.currentTurn === 'red' 
+      ? gameState.redTeam?.spymaster 
+      : gameState.blueTeam?.spymaster;
+    const spymasterName = currentTurnSpymaster?.username || 'Spymaster';
+    const isActiveSpymaster = currentPlayer && currentTurnSpymaster && 
+      (currentPlayer.id === currentTurnSpymaster.id || currentPlayer.username === currentTurnSpymaster.username);
+
+    // Handle solo mode
+    if (gameState.isSoloMode) {
+      const soloTeamSpymaster = gameState.soloTeam === 'red' 
+        ? gameState.redTeam?.spymaster 
+        : gameState.blueTeam?.spymaster;
+      const isActiveSpymasterSolo = currentPlayer && soloTeamSpymaster && 
+        (currentPlayer.id === soloTeamSpymaster.id || currentPlayer.username === soloTeamSpymaster.username);
+      
+      if (gameState.currentClue) {
+        return (
+          <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+            Clue: <span className="text-xl font-extrabold text-amber-300">{gameState.currentClue.word} ({gameState.currentClue.number})</span> - Please make a guess
+          </span>
+        );
       } else {
-        return 'shadow-2xl shadow-blue-400 ring-4 ring-blue-400/80 shadow-blue-500/70 drop-shadow-2xl';
+        if (isActiveSpymasterSolo) {
+          return (
+            <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+              💡 It's your turn to give a clue!
+            </span>
+          );
+        } else {
+          return (
+            <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+              ⏳ Waiting for {soloTeamSpymaster?.username || 'Spymaster'} to give a clue
+            </span>
+          );
+        }
       }
+    } else {
+      // Classic multiplayer mode
+      if (gameState.currentClue) {
+        return (
+          <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+            Clue: <span className="text-xl font-extrabold text-amber-300">{gameState.currentClue.word} ({gameState.currentClue.number})</span> - Please make a guess
+          </span>
+        );
+      } else {
+        if (isActiveSpymaster) {
+          return (
+            <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+              💡 It's your turn to give a clue!
+            </span>
+          );
+        } else {
+          return (
+            <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
+              ⏳ Waiting for {spymasterName} to give a clue
+            </span>
+          );
+        }
+      }
+    }
   };
 
   if (gameState.status === 'waiting') {
@@ -217,85 +363,33 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           
           {/* General Info Display */}
           <div className="px-6 py-3 bg-gradient-to-r from-violet-900/90 to-indigo-900/90 border border-violet-500/50 rounded-xl shadow-xl backdrop-blur-lg">
-            {gameState.currentClue ? (
-              // Clue has been given
-              <div className="text-center">
-                <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                  {(() => {
-                    // Find who gave the clue
-                    const currentTurnSpymaster = gameState.currentTurn === 'red' 
-                      ? gameState.redTeam?.spymaster 
-                      : gameState.blueTeam?.spymaster;
-                    const spymasterName = currentTurnSpymaster?.username || 'Spymaster';
-                    
-                    return `${spymasterName} has given the a clue! ${gameState.currentClue.word} (${gameState.currentClue.number})`;
-                  })()}
-                </span>
-                {gameState.guessesRemaining > 0 && (
-                  <div className="mt-2 text-sm text-violet-300">
-                    {gameState.guessesRemaining} guess{gameState.guessesRemaining !== 1 ? 'es' : ''} remaining
-                  </div>
-                )}
-              </div>
-            ) : (
-              // No clue given yet
-              <div className="text-center">
-                {(() => {
-                  // Check if current player is the active spymaster
-                  const currentTurnSpymaster = gameState.currentTurn === 'red' 
-                    ? gameState.redTeam?.spymaster 
-                    : gameState.blueTeam?.spymaster;
-                  
-                  const isActiveSpymaster = currentPlayer && currentTurnSpymaster && 
-                    (currentPlayer.id === currentTurnSpymaster.id || currentPlayer.username === currentTurnSpymaster.username);
-                  
-                  if (gameState.isSoloMode) {
-                    // Solo mode - find the spymaster on the active team
-                    const soloTeamSpymaster = gameState.soloTeam === 'red' 
-                      ? gameState.redTeam?.spymaster 
-                      : gameState.blueTeam?.spymaster;
-                    
-                    const isActiveSpymasterSolo = currentPlayer && soloTeamSpymaster && 
-                      (currentPlayer.id === soloTeamSpymaster.id || currentPlayer.username === soloTeamSpymaster.username);
-                    
-                    if (isActiveSpymasterSolo) {
-                      return (
-                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                          💡 It's your turn to give a clue!
-                        </span>
-                      );
-                    } else {
-                      const spymasterName = soloTeamSpymaster?.username || 'Spymaster';
-                      return (
-                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                          ⏳ Waiting for Spymaster {spymasterName} to give a clue
-                        </span>
-                      );
-                    }
-                  } else {
-                    // Classic multiplayer mode
-                    if (isActiveSpymaster) {
-                      return (
-                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                          💡 It's your turn to give a clue!
-                        </span>
-                      );
-                    } else {
-                      const spymasterName = currentTurnSpymaster?.username || 'Spymaster';
-                      return (
-                        <span className="text-lg font-bold text-violet-100 drop-shadow-lg">
-                          ⏳ Waiting for Spymaster {spymasterName} to give a clue
-                        </span>
-                      );
-                    }
-                  }
-                })()}
-              </div>
-            )}
+            <div className="text-center">
+              {getInfoMessage()}
+              {gameState.currentClue && gameState.guessesRemaining > 0 && (
+                <div className="mt-2 text-sm text-violet-300">
+                  {gameState.guessesRemaining} guess{gameState.guessesRemaining !== 1 ? 'es' : ''} remaining
+                </div>
+              )}
+            </div>
           </div>
 
           {/* THE MAIN 5x5 GAME BOARD with Turn-Based Glow Effect */}
-          <div className={`relative w-full sm:w-auto bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-2 sm:p-4 md:p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
+          <div className={`relative w-full bg-gradient-to-br from-slate-800/90 via-slate-700/70 to-slate-800/90 rounded-2xl p-2 sm:p-4 md:p-6 transition-all duration-700 ${getBoardGlowEffect()} border-2 border-slate-600/50 backdrop-blur-lg`}>
+            
+            {/* Action Dialog */}
+            {actionDialog.show && (
+              <div className={`absolute inset-0 flex items-center justify-center z-50 transition-all duration-500 ${
+                actionDialog.fadeOut ? 'opacity-0 scale-95 rotate-1' : 'opacity-100 scale-100 -rotate-1'
+              }`}>
+                <div className="bg-gradient-to-br from-violet-900/70 to-indigo-900/70 border-2 border-violet-400/40 rounded-2xl px-8 py-6 shadow-2xl backdrop-blur-md max-w-lg mx-4 transform -rotate-1 hover:rotate-0 transition-transform duration-300">
+                  <div className="text-center text-lg font-bold text-violet-50 drop-shadow-lg leading-relaxed">
+                    {actionDialog.message}
+                  </div>
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-violet-400/60 rounded-full shadow-lg"></div>
+                  <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-indigo-400/60 rounded-full shadow-lg"></div>
+                </div>
+              </div>
+            )}
             {/* Board Game Texture with Turn Indicator */}
             <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_20%,_rgba(139,69,19,0.1)_0%,_transparent_50%)] pointer-events-none"></div>
             <div className="absolute inset-0 rounded-2xl bg-[linear-gradient(45deg,_transparent_30%,_rgba(160,82,45,0.05)_30%,_rgba(160,82,45,0.05)_70%,_transparent_70%)] bg-[length:20px_20px] pointer-events-none"></div>
@@ -306,7 +400,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 : 'bg-gradient-to-br from-blue-500/10 via-transparent to-blue-500/5'
             }`}></div>
             <div className="relative z-10">
-              <div className="grid grid-cols-5 gap-1 sm:gap-3">
+              <div className="grid grid-cols-5 gap-1 sm:gap-2 md:gap-3 w-full">
                 {gameState.board && Array.isArray(gameState.board) ? gameState.board
                   .sort((a, b) => a.position - b.position)
                   .map((card) => (
@@ -314,8 +408,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       key={card.id}
                       card={card}
                       isSpymaster={isSpymaster}
-                      onClick={canRevealCard ? handleCardClick : undefined}
+                      onSelect={canRevealCard ? handleCardSelect : undefined}
+                      onSubmit={canRevealCard ? handleCardSubmit : undefined}
                       disabled={!canRevealCard}
+                      showSubmit={selectedCardId === card.id}
                     />
                   )) : (
                     <div className="text-center text-white">
@@ -328,7 +424,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           </div>
 
           {/* Team Scores and Game Status */}
-          <div className="flex items-center justify-center space-x-4 mb-4">
+          <div className="mb-4 flex flex-wrap justify-center gap-2 max-w-2xl mx-auto">
             {/* Red Team Score */}
             <div className="bg-gradient-to-br from-red-600/80 to-red-700/80 border border-red-400/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
               <div className="text-xl font-bold text-white text-center">
@@ -400,14 +496,30 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     required
                   />
                 </div>
-                <input
-                  type="number"
-                  min="1"
-                  max="9"
-                  value={clueNumber}
-                  onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
-                  className="w-16 px-3 py-2 bg-slate-700/50 border border-slate-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-center"
-                />
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => setClueNumber(Math.max(1, clueNumber - 1))}
+                    className="px-2 py-2 bg-slate-600/50 border border-slate-500 rounded-l-lg hover:bg-slate-500/50 focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-sm font-bold"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min="1"
+                    max="9"
+                    value={clueNumber}
+                    onChange={(e) => setClueNumber(parseInt(e.target.value) || 1)}
+                    className="w-12 px-2 py-2 bg-slate-700/50 border-t border-b border-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-center"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setClueNumber(Math.min(9, clueNumber + 1))}
+                    className="px-2 py-2 bg-slate-600/50 border border-slate-500 rounded-r-lg hover:bg-slate-500/50 focus:outline-none focus:ring-2 focus:ring-violet-400 text-slate-100 text-sm font-bold"
+                  >
+                    +
+                  </button>
+                </div>
                 <button
                   onClick={handleGiveClue}
                   className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-2 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold shadow-lg"
@@ -459,7 +571,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       </div>
 
       {/* Game Over Modal */}
-      {gameState.status === 'finished' && gameState.winner && (
+      {gameState.status === 'finished' && gameState.winner && showGameOverModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-600">
             {gameState.isSoloMode ? (
@@ -497,16 +609,16 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             )}
             <div className="flex gap-4">
               <button
-                onClick={() => window.location.reload()}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold"
+                onClick={() => setShowGameOverModal(false)}
+                className="flex-1 bg-gradient-to-r from-slate-600 to-slate-700 text-white px-6 py-3 rounded-lg hover:from-slate-700 hover:to-slate-800 transition-all duration-200 font-semibold"
               >
-                🔄 New Game
+                👁️ Back to Board
               </button>
               <button
-                onClick={() => console.log('Reset game')}
-                className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-6 py-3 rounded-lg hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 font-semibold"
+                onClick={() => navigate('/')}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-semibold"
               >
-                🎮 Play Again
+                🏠 Go to Homepage
               </button>
             </div>
           </div>
