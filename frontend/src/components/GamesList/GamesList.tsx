@@ -259,7 +259,7 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
         console.log('📡 Socket listeners setup for real-time lobby updates');
         console.log('📡 Socket ID:', socketService.socket?.id);
         console.log('📡 Socket connected:', socketService.socket?.connected);
-        console.log('📡 Socket rooms:', socketService.socket?.rooms);
+        // console.log('📡 Socket rooms:', socketService.socket?.rooms);
       }
     };
     

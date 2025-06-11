@@ -142,7 +142,7 @@ class SocketService {
   // Cleanup method to remove specific listeners
   off(event: string, callback?: Function): void {
     if (callback) {
-      this._socket?.off(event, callback);
+      this._socket?.off(event, callback as any);
     } else {
       this._socket?.off(event);
     }

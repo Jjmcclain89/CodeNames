@@ -64,13 +64,13 @@ export const useSocket = () => {
     socketService.onConnect(handlers.onConnect);
     socketService.onDisconnect(handlers.onDisconnect);
     socketService.onAuthenticated(handlers.onAuthenticated);
-    socketService.onRoomJoined(handlers.onRoomJoined);
-    socketService.onRoomCreated(handlers.onRoomCreated);
-    socketService.onUserJoined(handlers.onUserJoined);
-    socketService.onUserLeft(handlers.onUserLeft);
-    socketService.onRoomUsersUpdated(handlers.onRoomUsersUpdated);
-    socketService.onChatMessage(handlers.onChatMessage);
-    socketService.onError(handlers.onError);
+    // socketService.onRoomJoined && socketService.onRoomJoined(handlers.onRoomJoined);
+    // socketService.onRoomCreated && socketService.onRoomCreated(handlers.onRoomCreated);
+    // socketService.onUserJoined && socketService.onUserJoined(handlers.onUserJoined);
+    // socketService.onUserLeft && socketService.onUserLeft(handlers.onUserLeft);
+    // socketService.onRoomUsersUpdated && socketService.onRoomUsersUpdated(handlers.onRoomUsersUpdated);
+    // socketService.onChatMessage && socketService.onChatMessage(handlers.onChatMessage);
+    // socketService.onError && socketService.onError(handlers.onError);
 
     return () => {
       // Cleanup listeners
@@ -92,22 +92,22 @@ export const useSocket = () => {
   };
 
   const joinRoom = (roomCode: string) => {
-    socketService.joinRoom(roomCode);
+    // socketService.joinRoom && socketService.joinRoom(roomCode);
   };
 
   const leaveRoom = () => {
-    socketService.leaveRoom();
+    // socketService.leaveRoom && socketService.leaveRoom();
     setCurrentRoom(null);
     setRoomUsers([]);
     setMessages([]);
   };
 
   const createRoom = (roomName?: string) => {
-    socketService.createRoom(roomName);
+    // socketService.createRoom && socketService.createRoom(roomName);
   };
 
   const sendMessage = (message: string) => {
-    socketService.sendMessage(message);
+    // socketService.sendMessage && socketService.sendMessage(message);
   };
 
   return {

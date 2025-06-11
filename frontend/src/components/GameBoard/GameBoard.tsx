@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CodenamesGame, GamePlayer, TeamColor, PlayerRole, isSoloMode, getSoloTeam } from '../../types/game';
+import { CodenamesGame, GamePlayer, TeamColor, PlayerRole, isSoloMode, getSoloTeam, getAllPlayers } from '../../shared/types/game';
 import Card from './Card';
 import { gameService } from '../../services/gameService';
 import { socketService } from '../../services/socketService';
@@ -127,11 +127,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   };
 
   const getPlayersByTeam = (team: TeamColor) => {
-    return gameState.players.filter(p => p.team === team);
+    const allPlayers = getAllPlayers(gameState); return allPlayers.filter((p: any) => p.team === team);
   };
 
   const hasSpymaster = (team: TeamColor) => {
-    return gameState.players.some(p => p.team === team && p.role === 'spymaster');
+    const allPlayers = getAllPlayers(gameState); return allPlayers.some((p: any) => p.team === team && p.role === 'spymaster');
   };
 
   // Get board glow effect based on current turn
@@ -335,7 +335,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               <button
                 onClick={handleStartGame}
                 className="bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed shadow-lg"
-                disabled={gameState.players.length === 0}
+                disabled={getAllPlayers(gameState).length === 0}
               >
                 🚀 Start Game
               </button>

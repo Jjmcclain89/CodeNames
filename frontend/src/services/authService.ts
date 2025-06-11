@@ -10,7 +10,7 @@ export interface LoginResponse {
 
 class AuthService {
   // Use empty string for relative URLs - Vite proxy will handle routing
-  private readonly API_URL = import.meta.env.VITE_API_URL || '';
+  private readonly API_URL = (import.meta as any).env.VITE_API_URL || '';
 
   async login(username: string): Promise<LoginResponse> {
     try {
