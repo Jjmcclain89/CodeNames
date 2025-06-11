@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm run preview -- --port $PORT --host 0.0.0.0"
+
+[variables]
+NODE_ENV = "production"

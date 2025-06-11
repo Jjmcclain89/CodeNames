@@ -16,7 +16,7 @@ console.log('🚀 Starting Codenames backend server...');
 const app = express();
 const server = createServer(app);
 
-// CORS configuration for mobile access
+// CORS configuration for production deployment
 const corsOptions = {
   origin: [
     "http://localhost:5173",
@@ -24,9 +24,12 @@ const corsOptions = {
     // Allow any IP on local network for mobile testing
     /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:5173$/,
     /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:5173$/,
-    /^http:\/\/172\.16\.\d{1,3}\.\d{1,3}:5173$/
+    /^http:\/\/172\.16\.\d{1,3}\.\d{1,3}:5173$/,
+    // Production Railway domains
+    /^https:\/\/.*\.railway\.app$/,
+    /^https:\/\/.*\.up\.railway\.app$/
   ],
-  methods: ["GET", "POST"],
+  methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 };
 
@@ -39,11 +42,18 @@ console.log('📦 Express middleware configured');
 // SHARED VARIABLES FOR SOCKET HANDLERS
 // ========================================
 
-// Simple in-memory storage shared with socketHandlers.ts
+// In-memory storage for deployment (will migrate to DB later)
 const users = new Map<string, any>();
 const rooms = new Map<string, any>();
 const connectedUsers = new Map<string, any>();
 const userRooms = new Map<string, string>();
+
+// Prisma client ready for future database migration
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient({
+  // Optional: Disable Prisma for now, enable when ready for DB migration
+  log: process.env.NODE_ENV === 'production' ? [] : ['query', 'info', 'warn', 'error']
+});
 
 // Debug function to log users
 function logUsers() {
@@ -67,6 +77,7 @@ app.get('/api/health', (req: Request, res: Response): void => {
     connectedUsers: connectedUsers.size,
     activeRooms: rooms.size,
     totalUsers: users.size,
+    environment: process.env.NODE_ENV || 'development',
     endpoints: [
       'GET /api/health',
       'POST /api/auth/login', 
@@ -102,7 +113,7 @@ app.post('/api/auth/login', (req: Request, res: Response): void => {
       return;
     }
     
-    // Create simple user for Phase 1
+    // Create simple user for deployment
     const user = {
       id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       username: username.trim(),
@@ -112,7 +123,7 @@ app.post('/api/auth/login', (req: Request, res: Response): void => {
     // Simple token
     const token = `token_${user.id}_${Date.now()}`;
     
-    // Store user
+    // Store user in memory (for now)
     users.set(user.id, { ...user, token });
     
     console.log('✅ Login successful for:', username, 'User ID:', user.id);
@@ -195,7 +206,6 @@ app.post('/api/auth/verify', (req: Request, res: Response): void => {
   }
 });
 
-
 // Get user's current authorized games
 app.get('/api/auth/user-games', (req: Request, res: Response): void => {
   try {
@@ -250,7 +260,6 @@ console.log('🔗 API routes configured');
 // ========================================
 // SOCKET.IO SETUP
 // ========================================
-
 
 const io = new Server(server, {
     cors: corsOptions,
@@ -318,9 +327,23 @@ server.listen(Number(PORT), '0.0.0.0', () => {
   console.log('📡 Socket.io using unified socketHandlers.ts');
   console.log(`🔗 API endpoints: http://localhost:${PORT}/api`);
   console.log(`🏥 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('✅ All systems ready!');
   console.log('🎉 ================================');
   console.log('');
+});
+
+// Graceful shutdown for production
+process.on('SIGTERM', async () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully');
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('🛑 SIGINT received, shutting down gracefully');  
+  await prisma.$disconnect();
+  process.exit(0);
 });
 
 export default app;
