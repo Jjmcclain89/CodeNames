@@ -15,7 +15,7 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:3001',
+        target: 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
       }
@@ -24,17 +24,7 @@ export default defineConfig({
   preview: {
     port: 4173,
     host: '0.0.0.0',
-    // Allow Railway domains
-    allowedHosts: [
-      'localhost',
-      '127.0.0.1',
-      '0.0.0.0',
-      // Railway frontend domains
-      /.*\.railway\.app$/,
-      /.*\.up\.railway\.app$/,
-      // Specific domain that's causing the issue
-      'frontend-production-acc1.up.railway.app'
-    ]
+    allowedHosts: ['frontend-production-acc1.up.railway.app']
   },
   build: {
     outDir: 'dist',
@@ -47,5 +37,11 @@ export default defineConfig({
         }
       }
     }
+  },
+  // Ensure environment variables are available
+  define: {
+    'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://backend-production-8bea.up.railway.app'),
+    'import.meta.env.VITE_WS_URL': JSON.stringify(process.env.VITE_WS_URL || 'https://backend-production-8bea.up.railway.app'),
+    'import.meta.env.VITE_NODE_ENV': JSON.stringify(process.env.VITE_NODE_ENV || 'production')
   }
 })

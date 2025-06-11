@@ -25,6 +25,8 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+const SOCKET_URL = (import.meta as any).env.VITE_WS_URL || 'https://backend-production-8bea.up.railway.app';
+
 class SocketService {
   private _socket: Socket | null = null;
   private token: string | null = null;
