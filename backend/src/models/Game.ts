@@ -1,5 +1,5 @@
 // Game Model for Codenames - Updated for new team structure
-import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS, Team, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, canStartGame as canStartGameHelper, isSoloMode, getSoloTeam, getSoloTeamCards } from '../../../shared/types/game';
+import { CodenamesGame, CodeCard, GamePlayer, GameClue, GameConfig, TeamColor, PlayerRole, GAME_CONFIG, CODENAMES_WORDS, Team, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, canStartGame as canStartGameHelper, isSoloMode, getSoloTeam, getSoloTeamCards } from '../shared/types/game';
 
 export class CodenamesGameModel {
   private game: CodenamesGame;

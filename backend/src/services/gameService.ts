@@ -1,6 +1,6 @@
 // Game Service - Manages games and integrates with existing storage
 import { CodenamesGameModel } from '../models/Game';
-import { CodenamesGame, TeamColor, PlayerRole, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, isSoloMode } from '../../../shared/types/game';
+import { CodenamesGame, TeamColor, PlayerRole, getAllPlayers, getPlayerTeam, getPlayerRole, isTeamValid, isSoloMode } from '../shared/types/game';
 
 interface GameWithMeta {
   model: CodenamesGameModel;
