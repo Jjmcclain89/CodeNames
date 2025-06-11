@@ -53,7 +53,10 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
       setError(err instanceof Error ? err.message : 'Failed to load game lobbies');
       setGameLobbies([]);
     } finally {
-      setIsLoadingLobbies(false);
+      // Add 1-second delay before hiding spinner
+      setTimeout(() => {
+        setIsLoadingLobbies(false);
+      }, 500);
     }
   };
 
@@ -247,6 +250,12 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
           setGameLobbies(prev => prev.filter(lobby => lobby.code !== data.lobbyCode));
         });
         
+        // Listen for lobbies being deleted (empty)
+        socketService.socket.on('lobby:deleted', (data: any) => {
+          console.log('📡 Lobby deleted:', data);
+          setGameLobbies(prev => prev.filter(lobby => lobby.code !== data.lobbyCode));
+        });
+        
         console.log('📡 Socket listeners setup for real-time lobby updates');
         console.log('📡 Socket ID:', socketService.socket?.id);
         console.log('📡 Socket connected:', socketService.socket?.connected);
@@ -272,6 +281,7 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
       if (socketService.socket) {
         socketService.socket.off('lobby:created');
         socketService.socket.off('lobby:closed');
+        socketService.socket.off('lobby:deleted');
         console.log('🧹 Cleaned up socket listeners for GamesList');
       }
     };
@@ -373,9 +383,13 @@ const GamesList: React.FC<GamesListProps> = ({ className = '' }) => {
             <button 
               onClick={loadGameLobbiesList}
               disabled={isLoadingLobbies}
-              className="text-blue-400 hover:text-blue-300 font-medium flex items-center space-x-2 transition-colors duration-200"
+              className="text-blue-400 hover:text-blue-300 font-medium flex items-center space-x-2 transition-colors duration-200 disabled:opacity-50"
             >
-              <span>{isLoadingLobbies ? '🔄' : '🔄'}</span>
+              {isLoadingLobbies ? (
+                <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <span>🔄</span>
+              )}
             </button>
           </div>
           

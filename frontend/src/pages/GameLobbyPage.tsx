@@ -24,7 +24,7 @@ const GameLobbyPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [lobbyState, setLobbyState] = useState<any>(null);
-  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [gameState, setGameState] = useState<any>(null);
   const [messages, setMessages] = useState<GameLobbyMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -39,6 +39,12 @@ const GameLobbyPage: React.FC = () => {
     loadLobbyAndConnect();
     
     return () => {
+      // Emit leave-lobby event when component unmounts (user navigating away)
+      if (socketService.socket && lobbyId) {
+        console.log('🚪 [FRONTEND] Leaving lobby due to component unmount:', lobbyId);
+        socketService.socket.emit('leave-lobby', { lobbyId: lobbyId.toUpperCase() });
+      }
+      
       if (socketService.socket) {
         socketService.socket.off('player-joined-lobby');
         socketService.socket.off('player-left-lobby');
@@ -46,6 +52,7 @@ const GameLobbyPage: React.FC = () => {
         socketService.socket.off('lobby-updated');
         socketService.socket.off('game-created');
         socketService.socket.off('game-started');
+        socketService.socket.off('lobby-error');
       }
     };
   }, [lobbyId]);
@@ -141,22 +148,35 @@ const GameLobbyPage: React.FC = () => {
 
     // Lobby updates
     socketService.socket.on('lobby-updated', (lobbyData: any) => {
-      console.log('🎮 Lobby updated:', lobbyData);
-      console.log('🎮 Updated lobby:', lobbyData);
+      console.log('📡 [FRONTEND] Received lobby-updated event');
+      console.log('📡 [FRONTEND] Lobby data:', JSON.stringify(lobbyData, null, 2));
+      
+      // Clear any pending timeouts since we got a response
+      if ((window as any).leaveTeamTimeout) {
+        clearTimeout((window as any).leaveTeamTimeout);
+        (window as any).leaveTeamTimeout = null;
+        console.log('⏰ [FRONTEND] Cleared leave-team timeout');
+      }
+      
       setLobbyState(lobbyData);
       setGameState(lobbyData);
       
+      // Clear any existing errors since we got a successful update
+      setError('');
+      
       // Log team assignments for debugging
       if (lobbyData.redTeam || lobbyData.blueTeam) {
-        console.log('Red team:', lobbyData.redTeam ? {
+        console.log('📡 [FRONTEND] Red team:', lobbyData.redTeam ? {
           spymaster: lobbyData.redTeam.spymaster?.username,
           operatives: lobbyData.redTeam.operatives?.map((p: any) => p.username)
         } : 'empty');
-        console.log('Blue team:', lobbyData.blueTeam ? {
+        console.log('📡 [FRONTEND] Blue team:', lobbyData.blueTeam ? {
           spymaster: lobbyData.blueTeam.spymaster?.username,
           operatives: lobbyData.blueTeam.operatives?.map((p: any) => p.username)
         } : 'empty');
       }
+      
+      console.log('📡 [FRONTEND] Lobby state updated successfully');
     });
 
     // Chat
@@ -174,19 +194,40 @@ const GameLobbyPage: React.FC = () => {
       console.log('🎮 Game started, redirecting to:', data.redirectTo);
       navigate(data.redirectTo);
     });
+
+    // Lobby errors
+    socketService.socket.on('lobby-error', (errorMessage: string) => {
+      console.error('📡 [FRONTEND] Received lobby-error:', errorMessage);
+      
+      // Clear any pending timeouts since we got a response (even if error)
+      if ((window as any).leaveTeamTimeout) {
+        clearTimeout((window as any).leaveTeamTimeout);
+        (window as any).leaveTeamTimeout = null;
+        console.log('⏰ [FRONTEND] Cleared leave-team timeout due to error');
+      }
+      
+      setError(errorMessage);
+    });
   };
 
   const handleJoinTeam = (team: string, role: string) => {
+    console.log(`👥 Joining ${team} team as ${role}`);
+    
     if (!isConnected) {
       setError('Not connected to server');
       return;
     }
+
+    // Clear any existing errors
+    setError('');
 
     socketService.socket?.emit('lobby:join-team', {
       lobbyId: lobbyId?.toUpperCase(),
       team,
       role
     });
+    
+    console.log(`📤 Sent join team event for ${team}/${role}`);
   };
 
   const handleSimpleTest = () => {
@@ -204,20 +245,39 @@ const GameLobbyPage: React.FC = () => {
   };
 
   const handleLeaveTeam = (team: string, role: string) => {
-    console.log(`🚪 Leaving ${team} team as ${role}`);
+    console.log(`🚪 [FRONTEND] Leaving ${team} team as ${role}`);
     
     if (!isConnected) {
       setError('Not connected to server');
       return;
     }
 
-    socketService.socket?.emit('lobby:leave-team', {
+    // Clear any existing errors
+    setError('');
+
+    const eventData = {
       lobbyId: lobbyId?.toUpperCase(),
       team,
       role
-    });
+    };
+
+    console.log(`📤 [FRONTEND] Sending leave team event:`, eventData);
+    console.log(`📊 [FRONTEND] Current lobby state before leave:`, lobbyState);
+    console.log(`📊 [FRONTEND] Current user:`, currentUser);
     
-    console.log(`📤 Sent leave team event for ${team}/${role}`);
+    socketService.socket?.emit('lobby:leave-team', eventData);
+    
+    // Set up a timeout to detect if we don't get a response
+    const timeoutId = setTimeout(() => {
+      console.error(`⏰ [FRONTEND] Timeout waiting for response to leave-team event after 5 seconds`);
+      console.error(`⏰ [FRONTEND] This suggests the backend isn't sending lobby-updated or lobby-error`);
+      setError('Request timed out - please try again');
+    }, 5000);
+    
+    // Store timeout ID so we can clear it when we get a response
+    (window as any).leaveTeamTimeout = timeoutId;
+    
+    console.log(`📤 [FRONTEND] Leave team event sent, waiting for response...`);
   };
 
   const handleStartGame = async () => {
