@@ -23,7 +23,18 @@ export default defineConfig({
   },
   preview: {
     port: 4173,
-    host: '0.0.0.0'
+    host: '0.0.0.0',
+    // Allow Railway domains
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '0.0.0.0',
+      // Railway frontend domains
+      /.*\.railway\.app$/,
+      /.*\.up\.railway\.app$/,
+      // Specific domain that's causing the issue
+      'frontend-production-acc1.up.railway.app'
+    ]
   },
   build: {
     outDir: 'dist',
