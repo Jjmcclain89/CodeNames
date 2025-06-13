@@ -15,9 +15,10 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: process.env.VITE_API_URL || 'http://localhost:3001',
         changeOrigin: true,
         secure: false,
+        ws: true // Enable WebSocket proxying
       }
     }
   },
@@ -38,10 +39,11 @@ export default defineConfig({
       }
     }
   },
-  // Ensure environment variables are available
+  // Ensure environment variables are available in production
   define: {
     'import.meta.env.VITE_API_URL': JSON.stringify(process.env.VITE_API_URL || 'https://backend-production-8bea.up.railway.app'),
     'import.meta.env.VITE_WS_URL': JSON.stringify(process.env.VITE_WS_URL || 'https://backend-production-8bea.up.railway.app'),
-    'import.meta.env.VITE_NODE_ENV': JSON.stringify(process.env.VITE_NODE_ENV || 'production')
+    'import.meta.env.VITE_NODE_ENV': JSON.stringify(process.env.VITE_NODE_ENV || 'production'),
+    'import.meta.env.VITE_SOCKET_URL': JSON.stringify(process.env.VITE_WS_URL || 'https://backend-production-8bea.up.railway.app')
   }
 })

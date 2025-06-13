@@ -1,6 +1,7 @@
 // Frontend Game Service - Extends existing socketService for game functionality
 import { socketService } from './socketService';
 import { CodenamesGame, GamePlayer, TeamColor, PlayerRole, GameClue, CodeCard } from '../types/game';
+const API_URL = (import.meta as any).env.VITE_API_URL || 'https://backend-production-8bea.up.railway.app';
 
 class GameService {
   // Game management

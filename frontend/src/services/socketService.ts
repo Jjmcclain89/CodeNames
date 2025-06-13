@@ -67,18 +67,28 @@ class SocketService {
     console.log('📡 Creating new socket connection');
     this.isConnecting = true;
 
-    // Dynamic socket URL
+    // Dynamic socket URL - fixed for Railway production
     const currentHost = window.location.hostname;
     const isLocalhost = currentHost === 'localhost' || currentHost === '127.0.0.1';
-    const socketPort = '3001';
+    const isProduction = currentHost.includes('railway.app');
     
     let socketUrl;
-    if (import.meta.env.VITE_SOCKET_URL) {
-      socketUrl = import.meta.env.VITE_SOCKET_URL;
+    if (import.meta.env.VITE_WS_URL) {
+      // Use environment variable if set (preferred for production)
+      socketUrl = import.meta.env.VITE_WS_URL;
+      console.log('📡 Using VITE_WS_URL:', socketUrl);
     } else if (isLocalhost) {
-      socketUrl = `http://localhost:${socketPort}`;
+      // Local development
+      socketUrl = 'http://localhost:3001';
+      console.log('📡 Using localhost backend:', socketUrl);
+    } else if (isProduction) {
+      // Railway production fallback
+      socketUrl = 'https://backend-production-8bea.up.railway.app';
+      console.log('📡 Using Railway backend fallback:', socketUrl);
     } else {
-      socketUrl = `http://${currentHost}:${socketPort}`;
+      // Other production environments
+      socketUrl = `https://${currentHost}:3001`;
+      console.log('📡 Using production backend:', socketUrl);
     }
 
     this._socket = io(socketUrl, {

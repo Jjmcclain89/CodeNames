@@ -20,17 +20,21 @@ const server = createServer(app);
 const corsOptions = {
   origin: [
     "http://localhost:5173",
+    "http://localhost:4173", // Vite preview mode
     process.env.FRONTEND_URL || "http://localhost:5173",
     // Allow any IP on local network for mobile testing
     /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:5173$/,
     /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:5173$/,
     /^http:\/\/172\.16\.\d{1,3}\.\d{1,3}:5173$/,
-    // Production Railway domains
+    // Production Railway domains (both formats)
     /^https:\/\/.*\.railway\.app$/,
-    /^https:\/\/.*\.up\.railway\.app$/
+    /^https:\/\/.*\.up\.railway\.app$/,
+    // Specific Railway frontend URL
+    "https://frontend-production-acc1.up.railway.app"
   ],
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  credentials: true
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization", "x-requested-with"]
 };
 
 app.use(cors(corsOptions));
@@ -264,6 +268,11 @@ console.log('🔗 API routes configured');
 const io = new Server(server, {
     cors: corsOptions,
     transports: ['websocket', 'polling'],
+    allowEIO3: true, // Enable compatibility
+    pingTimeout: 60000, // Increase timeout for Railway
+    pingInterval: 25000,
+    upgradeTimeout: 30000,
+    allowUpgrades: true
 });
 
 console.log('📡 Socket.io configured - all handlers in socketHandlers.ts');
