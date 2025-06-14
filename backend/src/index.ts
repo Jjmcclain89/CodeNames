@@ -30,7 +30,7 @@ const corsOptions = {
     /^https:\/\/.*\.railway\.app$/,
     /^https:\/\/.*\.up\.railway\.app$/,
     // Specific Railway frontend URL
-    "https://frontend-production-acc1.up.railway.app"
+    "https://codenames.up.railway.app"
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,

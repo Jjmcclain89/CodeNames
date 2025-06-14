@@ -25,7 +25,7 @@ export default defineConfig({
   preview: {
     port: 4173,
     host: '0.0.0.0',
-    allowedHosts: ['frontend-production-acc1.up.railway.app']
+    allowedHosts: ['codenames.up.railway.app']
   },
   build: {
     outDir: 'dist',

@@ -14,7 +14,7 @@ Add these to your Railway **Backend** service:
 
 ```
 NODE_ENV=production
-FRONTEND_URL=https://frontend-production-acc1.up.railway.app
+FRONTEND_URL=https://codenames.up.railway.app
 JWT_SECRET=your-super-secret-jwt-key-change-this
 DATABASE_URL=(auto-provided by Railway PostgreSQL service)
 ```
