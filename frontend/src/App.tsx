@@ -78,10 +78,11 @@ function App() {
   return (
     <Router>
       <div className="App min-h-screen">
-        {/* Translucent Header - only show when authenticated */}
-        {isAuthenticated && (
-          <Header user={user} onLogout={handleLogout} />
-        )}
+        {/* Always show header, but pass user and logout only when authenticated */}
+        <Header 
+          user={isAuthenticated ? user : undefined} 
+          onLogout={isAuthenticated ? handleLogout : undefined} 
+        />
 
         <main className="pt-16">
           <Routes>

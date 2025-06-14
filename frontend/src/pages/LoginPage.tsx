@@ -14,7 +14,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     e.preventDefault();
     
     if (!username.trim()) {
-      setError('Username is required');
+      setError('Name is required');
       return;
     }
 
@@ -47,48 +47,70 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md border border-gray-200">
-        <h2 className="text-2xl font-bold text-center mb-6 text-gray-900">Join Codenames</h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
-          <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-              Choose a Username
-            </label>
-            <input
-              type="text"
-              id="username"
-              name="username"
-              value={username}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 bg-white"
-              placeholder="Enter your username"
-              disabled={isLoading}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck="false"
-              data-lpignore="true"
-            />
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-900 lg:overflow-hidden relative flex justify-center">
+      {/* Background Pattern - Matching HomePage */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-400 via-transparent to-transparent"></div>
+        <div className="absolute inset-0 bg-[linear-gradient(45deg,_transparent_25%,_rgba(255,255,255,0.02)_25%,_rgba(255,255,255,0.02)_50%,_transparent_50%,_transparent_75%,_rgba(255,255,255,0.02)_75%)] bg-[length:60px_60px]"></div>
+      </div>
+
+      {/* Login Dialog */}
+      <div className="relative z-10 w-full max-w-md mx-4 mt-8">
+        {/* Glass morphism card */}
+        <div className="bg-slate-800/30 backdrop-blur-md border border-slate-600/30 rounded-xl p-8 shadow-2xl">
+          {/* Subtle shine effect */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent rounded-xl"></div>
+          
+          <div className="relative">
+            {/* Header */}
+            <div className="text-center mb-4">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-violet-400 to-indigo-400 bg-clip-text text-transparent mb-2 drop-shadow-lg">
+                Codenames Online
+              </h1>
+              <h2 className="text-left text-slate-200">Enter your name:</h2>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
+              <div>
+                <input
+                  type="text"
+                  id="username"
+                  name="username"
+                  value={username}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400/50 text-slate-100 placeholder-slate-400 backdrop-blur-sm transition-all duration-200"
+                  placeholder="Enter your name"
+                  disabled={isLoading}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck="false"
+                  data-lpignore="true"
+                />
+              </div>
+              
+              {error && (
+                <div className="bg-red-900/20 border border-red-500/30 text-red-400 text-sm p-3 rounded-lg backdrop-blur-sm">
+                  {error}
+                </div>
+              )}
+              
+              <button
+                type="submit"
+                disabled={isLoading || !username.trim()}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white py-3 px-6 rounded-lg font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] disabled:transform-none backdrop-blur-sm"
+              >
+                {isLoading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>Connecting...</span>
+                  </div>
+                ) : (
+                  'Start Playing'
+                )}
+              </button>
+            </form>
           </div>
-          
-          {error && (
-            <div className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200">{error}</div>
-          )}
-          
-          <button
-            type="submit"
-            disabled={isLoading || !username.trim()}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white py-2 px-4 rounded-md font-medium transition-colors"
-          >
-            {isLoading ? 'Connecting...' : 'Join Game'}
-          </button>
-        </form>
-        
-        <div className="mt-6 text-center text-sm text-gray-600">
-          <p>Enter any username to join or create an account</p>
-          <p className="mt-2 text-xs text-gray-500">Debug: Check browser console for error details</p>
         </div>
       </div>
     </div>
